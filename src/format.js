@@ -1,5 +1,5 @@
 // Xabarlarni chiroyli ko'rinishga keltiruvchi yordamchi funksiyalar
-import { CURRENCIES, parseCbuDate } from './cbu.js';
+import { CURRENCIES, ALL_CURRENCIES, parseCbuDate } from './cbu.js';
 
 const MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
 const WEEKDAYS = ['yakshanba', 'dushanba', 'seshanba', 'chorshanba', 'payshanba', 'juma', 'shanba'];
@@ -52,12 +52,12 @@ export function tashkentTime(now = new Date()) {
 }
 
 // Kurslar jadvali (monospace blokda raqamlar tekis turadi)
-export function ratesTable(rates) {
-  const rows = Object.keys(CURRENCIES)
+export function ratesTable(rates, codes = Object.keys(CURRENCIES)) {
+  const rows = codes
     .filter((code) => rates[code])
     .map((code) => {
       const r = rates[code];
-      return `${CURRENCIES[code].flag} ${code}  ${money(r.rate).padStart(10)}  ${diffBadge(r.diff)}`;
+      return `${ALL_CURRENCIES[code].flag} ${code}  ${money(r.rate).padStart(10)}  ${diffBadge(r.diff)}`;
     });
   return `<pre>${rows.join('\n')}</pre>`;
 }

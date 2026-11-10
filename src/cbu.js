@@ -2,12 +2,31 @@
 // Hujjat: https://cbu.uz/uz/arkhiv-kursov-valyut/
 const CBU_URL = 'https://cbu.uz/uz/arkhiv-kursov-valyut/json/';
 
-// Botda ko'rsatiladigan valyutalar (tartib bilan)
+// Bepul valyutalar (tartib bilan)
 export const CURRENCIES = {
   USD: { flag: '🇺🇸', name: 'AQSH dollari' },
   EUR: { flag: '🇪🇺', name: 'Yevro' },
   RUB: { flag: '🇷🇺', name: 'Rossiya rubli' },
 };
+
+// Premium valyutalar (tartib bilan)
+export const PREMIUM_CURRENCIES = {
+  KZT: { flag: '🇰🇿', name: 'Qozog\'iston tengesi' },
+  KGS: { flag: '🇰🇬', name: 'Qirg\'iz somi' },
+  TJS: { flag: '🇹🇯', name: 'Tojik somonisi' },
+  TMT: { flag: '🇹🇲', name: 'Turkman manati' },
+  AFN: { flag: '🇦🇫', name: 'Afg\'on afg\'onisi' },
+  TRY: { flag: '🇹🇷', name: 'Turk lirasi' },
+  CNY: { flag: '🇨🇳', name: 'Xitoy yuani' },
+  KRW: { flag: '🇰🇷', name: 'Koreya voni' },
+  AED: { flag: '🇦🇪', name: 'BAA dirhami' },
+  SAR: { flag: '🇸🇦', name: 'Saudiya riyoli' },
+  GBP: { flag: '🇬🇧', name: 'Angliya funti' },
+  PLN: { flag: '🇵🇱', name: 'Polsha zlotiysi' },
+};
+
+export const ALL_CURRENCIES = { ...CURRENCIES, ...PREMIUM_CURRENCIES };
+export const isPremiumCurrency = (code) => !!PREMIUM_CURRENCIES[code];
 
 const CACHE_SECONDS = 30 * 60; // kursni 30 daqiqa eslab qolamiz
 
@@ -22,7 +41,7 @@ async function fetchJson(url) {
 function normalize(list) {
   const out = {};
   for (const item of list) {
-    if (!CURRENCIES[item.Ccy]) continue;
+    if (!ALL_CURRENCIES[item.Ccy]) continue;
     const nominal = Number(item.Nominal) || 1;
     out[item.Ccy] = {
       rate: Number(item.Rate) / nominal, // 1 birlik uchun so'm

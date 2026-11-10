@@ -4,7 +4,7 @@
 //  /setup    — webhook, buyruqlar va bot tavsifini bir marta o'rnatish
 //  cron      — har kuni ertalab obunachilarga kursni yuborish
 import { Telegram } from './telegram.js';
-import { getRates, getRatesOn, parseCbuDate, CURRENCIES } from './cbu.js';
+import { getRates, getRatesOn, parseCbuDate, CURRENCIES, PREMIUM_CURRENCIES, ALL_CURRENCIES, isPremiumCurrency } from './cbu.js';
 import { parseConvert } from './convert.js';
 import {
   esc, boldSans, money, smartMoney, uzDate, tashkentTime,
@@ -38,9 +38,35 @@ const CONVERT_OPTIONS = [
   ['UZS', '🇺🇿 So\'m → valyuta'],
 ];
 
+function convLabel(code) {
+  const opt = CONVERT_OPTIONS.find(([c]) => c === code);
+  return opt ? opt[1] : `${ALL_CURRENCIES[code].flag} ${code} → so'm`;
+}
+
 function convertKeyboard(selected) {
   const btn = ([code, label]) => ({ text: (code === selected ? '✅ ' : '') + label, callback_data: `conv_${code}` });
-  return { inline_keyboard: [CONVERT_OPTIONS.slice(0, 2).map(btn), CONVERT_OPTIONS.slice(2).map(btn)] };
+  const more = isPremiumCurrency(selected) ? `✅ ⭐ ${selected}` : '⭐ Boshqa valyutalar';
+  return {
+    inline_keyboard: [
+      CONVERT_OPTIONS.slice(0, 2).map(btn),
+      CONVERT_OPTIONS.slice(2).map(btn),
+      [{ text: more, callback_data: 'conv_more' }],
+    ],
+  };
+}
+
+// Premium valyutalar tugmalari (3 tadan qatorda)
+function premiumConvertKeyboard(selected) {
+  const codes = Object.keys(PREMIUM_CURRENCIES);
+  const rows = [];
+  for (let i = 0; i < codes.length; i += 3) {
+    rows.push(codes.slice(i, i + 3).map((c) => ({
+      text: `${c === selected ? '✅ ' : ''}${PREMIUM_CURRENCIES[c].flag} ${c}`,
+      callback_data: `conv_${c}`,
+    })));
+  }
+  rows.push([{ text: '⬅️ Asosiy valyutalar', callback_data: 'convert_help' }]);
+  return { inline_keyboard: rows };
 }
 
 // Xabarning o'zi ostida chiqadigan tugmalar
@@ -62,6 +88,14 @@ const RATES_INLINE = {
     { text: '🔄 Konvertatsiya', callback_data: 'convert_help' },
   ]],
 };
+
+// Premium bo'lmaganlarga kurs ostida "⭐ Boshqa valyutalar" ham chiqadi
+function ratesInline(premium) {
+  if (premium) return RATES_INLINE;
+  return { inline_keyboard: [...RATES_INLINE.inline_keyboard, [{ text: '⭐ Boshqa valyutalar', callback_data: 'premium_info' }]] };
+}
+
+const ratesCodes = (premium) => Object.keys(premium ? ALL_CURRENCIES : CURRENCIES);
 
 // Bir cron ishga tushishida nechta obunachiga yuboriladi.
 // Bepul tarifda bitta ishga tushishda 50 ta tashqi so'rov limiti bor, shuning uchun 40.
@@ -101,6 +135,7 @@ function helpText() {
     '/kurs: bugungi kurs',
     '/konvert: konvertatsiya',
     '/obuna: kunlik obunani yoqish yoki o\'chirish',
+    '/premium: ⭐ 12 ta qo\'shimcha valyuta',
     '/yordam: shu xabar',
     '',
     '<b>Konvertatsiya:</b> summa va valyutani yozing',
@@ -139,7 +174,7 @@ function convertHelpText() {
 }
 
 function convertChosenText(rates, code) {
-  const label = CONVERT_OPTIONS.find(([c]) => c === code)[1];
+  const label = convLabel(code);
   const lines = [
     `🔄 <b>${boldSans('Konvertatsiya')}</b>`,
     '',
@@ -153,13 +188,13 @@ function convertChosenText(rates, code) {
   return lines.join('\n');
 }
 
-async function ratesText(rates) {
+async function ratesText(rates, premium = false) {
   const date = rates.USD?.date;
   return [
     `📊 <b>${boldSans('Bugungi kurslar')}</b>`,
     date ? `📅 <i>${uzDate(date)}</i>` : '',
     '',
-    ratesTable(rates),
+    ratesTable(rates, ratesCodes(premium)),
     usdComment(rates),
     '',
     `<blockquote>🏦 Manba: O'zbekiston Markaziy banki\n🕐 Yangilandi: ${tashkentTime()}</blockquote>`,
@@ -177,29 +212,29 @@ async function weeklyUsdDiff(rates) {
   }
 }
 
-function morningText(rates, weekDiff) {
+function morningText(rates, weekDiff, premium = false) {
   return [
     `☀️ <b>${boldSans('Xayrli tong!')}</b>`,
     `📅 <i>${uzDate(rates.USD.date, true)}</i>`,
     '',
-    ratesTable(rates),
+    ratesTable(rates, ratesCodes(premium)),
     weeklyComment(weekDiff),
     '',
     '<i>Kuningiz xayrli o\'tsin!</i> 🌿',
   ].filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n');
 }
 
-function convertText(rates, { amount, from }, inGroup = false) {
+function convertText(rates, { amount, from }, inGroup = false, premium = false) {
   const lines = [`🔄 <b>${boldSans('Konvertatsiya')}</b>`, ''];
   if (from === 'UZS') {
     lines.push(`🇺🇿 <b>${smartMoney(amount)} so'm</b> =`, '');
-    for (const [code, info] of Object.entries(CURRENCIES)) {
+    for (const [code, info] of Object.entries(premium ? ALL_CURRENCIES : CURRENCIES)) {
       if (!rates[code]) continue;
       lines.push(`${info.flag} <b>${money(amount / rates[code].rate)} ${code}</b>`);
     }
   } else {
     const r = rates[from];
-    lines.push(`${CURRENCIES[from].flag} <b>${smartMoney(amount)} ${from}</b> = 🇺🇿 <b>${smartMoney(amount * r.rate)} so'm</b>`);
+    lines.push(`${ALL_CURRENCIES[from].flag} <b>${smartMoney(amount)} ${from}</b> = 🇺🇿 <b>${smartMoney(amount * r.rate)} so'm</b>`);
     lines.push('', `<i>Kurs: 1 ${from} = ${money(r.rate)} so'm</i>`);
   }
   if (!inGroup) lines.push('', '✏️ <i>Yana summa yozing yoki valyutani almashtiring</i> 👇');
@@ -213,11 +248,92 @@ async function ensureStateTable(env) {
   if (tablesReady) return;
   await env.DB.batch([
     env.DB.prepare('CREATE TABLE IF NOT EXISTS convert_state (chat_id INTEGER PRIMARY KEY, currency TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'),
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS premium (chat_id INTEGER PRIMARY KEY, until TEXT NOT NULL, charge_id TEXT, updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'),
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS payments (charge_id TEXT PRIMARY KEY, chat_id INTEGER NOT NULL, amount INTEGER NOT NULL, recurring INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS users (chat_id INTEGER PRIMARY KEY, type TEXT NOT NULL, name TEXT, created_at TEXT NOT NULL DEFAULT (datetime(\'now\')), last_seen TEXT NOT NULL DEFAULT (datetime(\'now\')))'),
     // Statistika qo'shilishidan oldingi obunachilarni ham hisobga olamiz
     env.DB.prepare('INSERT OR IGNORE INTO users (chat_id, type, name, created_at, last_seen) SELECT chat_id, CASE WHEN chat_id < 0 THEN \'group\' ELSE \'private\' END, first_name, created_at, created_at FROM subscribers'),
   ]);
   tablesReady = true;
+}
+
+// ---------- Premium (Telegram Stars) ----------
+const premiumPrice = (env) => Number(env.PREMIUM_PRICE) || 50;
+
+// Premium tugash sanasi (Date) yoki null. Admin uchun har doim cheksiz.
+async function premiumUntil(env, userId) {
+  if (!userId) return null;
+  if (isAdmin(env, userId)) return new Date('2099-12-31T00:00:00Z');
+  await ensureStateTable(env);
+  const row = await env.DB.prepare('SELECT until FROM premium WHERE chat_id = ? AND until > datetime(\'now\')').bind(userId).first();
+  return row ? new Date(row.until.replace(' ', 'T') + 'Z') : null;
+}
+const isPremium = async (env, userId) => !!(await premiumUntil(env, userId));
+
+function dateUz(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return uzDate(`${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`);
+}
+
+function premiumText(env, until) {
+  const list = (obj) => Object.entries(obj).map(([c, i]) => `${i.flag} ${c}: ${i.name}`);
+  const lines = [`⭐ <b>${boldSans('Premium')}</b>`, ''];
+  if (until) {
+    lines.push(until.getUTCFullYear() >= 2099
+      ? '✅ <b>Premium faol</b> (admin, cheksiz)'
+      : `✅ <b>Premium faol:</b> ${dateUz(until)} gacha`, '');
+  }
+  lines.push(
+    '🆓 <b>Bepul valyutalar:</b>', ...list(CURRENCIES), '',
+    `⭐ <b>Premium'da qo'shiladi:</b>`, ...list(PREMIUM_CURRENCIES), '',
+  );
+  if (until) lines.push('💡 <i>Kurslar: 💵 Bugungi kurs · Konvertatsiya: ⭐ Boshqa valyutalar</i>');
+  else lines.push(`💰 <b>Narxi: ${premiumPrice(env)} ⭐ / oy</b>`);
+  return lines.join('\n');
+}
+
+async function sendPremiumInfo(tg, env, chatId, userId) {
+  const until = await premiumUntil(env, userId);
+  if (until) return tg.send(chatId, premiumText(env, until));
+  const link = await tg.call('createInvoiceLink', {
+    title: 'Premium: 12 ta valyuta',
+    description: '12 ta qo\'shimcha valyuta kursi va konvertatsiyasi. Har 30 kunda avtomatik yangilanadi, istalgan vaqtda bekor qilish mumkin.',
+    payload: 'premium',
+    currency: 'XTR', // Telegram Stars
+    prices: [{ label: 'Premium (30 kun)', amount: premiumPrice(env) }],
+    subscription_period: 30 * 24 * 3600,
+  });
+  return tg.send(chatId, premiumText(env, null), {
+    reply_markup: { inline_keyboard: [[{ text: `⭐ Premium olish (${premiumPrice(env)} ⭐)`, url: link }]] },
+  });
+}
+
+// To'lov muvaffaqiyatli bo'lganda (birinchi to'lov va har oylik yangilanish)
+async function handlePayment(tg, env, msg) {
+  const pay = msg.successful_payment;
+  const userId = msg.from.id;
+  const until = pay.subscription_expiration_date
+    ? new Date(pay.subscription_expiration_date * 1000)
+    : new Date(Date.now() + 30 * 24 * 3600 * 1000);
+  const untilSql = until.toISOString().slice(0, 19).replace('T', ' ');
+  await ensureStateTable(env);
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO premium (chat_id, until, charge_id) VALUES (?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET until = excluded.until, charge_id = excluded.charge_id, updated_at = datetime(\'now\')')
+      .bind(userId, untilSql, pay.telegram_payment_charge_id),
+    env.DB.prepare('INSERT OR IGNORE INTO payments (charge_id, chat_id, amount, recurring) VALUES (?, ?, ?, ?)')
+      .bind(pay.telegram_payment_charge_id, userId, pay.total_amount, pay.is_recurring ? 1 : 0),
+  ]);
+  if (pay.is_recurring && !pay.is_first_recurring) {
+    return tg.send(msg.chat.id, `⭐ Premium yangilandi: <b>${dateUz(until)}</b> gacha. Rahmat! 🙏`);
+  }
+  return tg.send(msg.chat.id, [
+    '🎉 <b>Premium yoqildi!</b>',
+    '',
+    `✅ 12 ta qo'shimcha valyuta ochildi: <b>${dateUz(until)}</b> gacha.`,
+    '💵 <b>Bugungi kurs</b> va <b>Konvertatsiya</b> bo\'limlarini ochib ko\'ring.',
+    '',
+    '<i>Obuna har 30 kunda avtomatik yangilanadi. Bekor qilish: Telegram → Sozlamalar → Telegram Stars.</i>',
+  ].join('\n'), { reply_markup: MAIN_MENU });
 }
 
 // ---------- Statistika ----------
@@ -242,7 +358,9 @@ async function statsText(env) {
     (SELECT COUNT(*) FROM users WHERE type = 'private' AND last_seen >= datetime('now', '-7 days')) AS active7,
     (SELECT COUNT(*) FROM users WHERE type = 'group') AS groups,
     (SELECT COUNT(*) FROM subscribers WHERE chat_id > 0) AS subs,
-    (SELECT COUNT(*) FROM subscribers WHERE chat_id < 0) AS group_subs`).first();
+    (SELECT COUNT(*) FROM subscribers WHERE chat_id < 0) AS group_subs,
+    (SELECT COUNT(*) FROM premium WHERE until > datetime('now')) AS premium,
+    (SELECT COALESCE(SUM(amount), 0) FROM payments) AS stars`).first();
   const n = (x) => money(Number(x) || 0, 0);
   return [
     `📊 <b>${boldSans('Bot statistikasi')}</b>`,
@@ -252,6 +370,7 @@ async function statsText(env) {
     `🔥 Oxirgi 7 kunda faol: <b>${n(r.active7)}</b>`,
     `🔔 Kunlik obunachilar: <b>${n(r.subs)}</b>`,
     `👨‍👩‍👧 Guruhlar: <b>${n(r.groups)}</b> (obuna bo'lgan: ${n(r.group_subs)})`,
+    `⭐ Premium: <b>${n(r.premium)}</b> (jami tushum: ${n(r.stars)} ⭐)`,
     '',
     `<i>🕐 ${tashkentTime()} holatiga</i>`,
   ].join('\n');
@@ -318,6 +437,16 @@ async function handleMessage(tg, env, msg) {
 
   await trackChat(env, msg.chat);
 
+  if (msg.successful_payment) return handlePayment(tg, env, msg);
+  if (cmd === '/paysupport') {
+    return tg.send(chatId, [
+      '💳 <b>To\'lov bo\'yicha yordam</b>',
+      '',
+      `Savol yoki muammo bo'lsa, <a href="tg://user?id=${env.ADMIN_ID}">adminga yozing</a>.`,
+      'Obunani bekor qilish: Telegram → Sozlamalar → Telegram Stars.',
+    ].join('\n'));
+  }
+
   if (cmd === '/id') {
     return tg.send(chatId, `🆔 Sizning Telegram ID'ingiz: <code>${msg.from?.id}</code>`);
   }
@@ -345,8 +474,10 @@ async function handleMessage(tg, env, msg) {
   if (cmd === '/yordam' || cmd === '/help' || text === BTN.HELP) {
     return tg.send(chatId, helpText(), { reply_markup: MAIN_MENU });
   }
+  const premium = await isPremium(env, msg.from?.id);
+  if (cmd === '/premium') return sendPremiumInfo(tg, env, chatId, msg.from?.id);
   if (cmd === '/kurs' || text === BTN.RATES) {
-    return tg.send(chatId, await ratesText(await getRates()), { reply_markup: RATES_INLINE });
+    return tg.send(chatId, await ratesText(await getRates(), premium), { reply_markup: ratesInline(premium) });
   }
   if (cmd === '/obuna' || text === BTN.SUBSCRIBE) {
     return tg.send(chatId, await toggleSubscription(env, chatId, firstName), { reply_markup: MAIN_MENU });
@@ -358,11 +489,13 @@ async function handleMessage(tg, env, msg) {
   const req = (cmd === '/konvert' || cmd === '/k') ? parseConvert(args) : (text && !cmd ? parseConvert(text) : null);
   if (req) {
     if (req.from) {
+      if (isPremiumCurrency(req.from) && !premium) return sendPremiumInfo(tg, env, chatId, msg.from?.id);
       await setConvertCurrency(env, chatId, req.from); // "50 eur" yozsa, keyingi sonlar ham yevroda hisoblanadi
     } else {
       req.from = (await getConvertCurrency(env, chatId)) || 'USD';
+      if (isPremiumCurrency(req.from) && !premium) return sendPremiumInfo(tg, env, chatId, msg.from?.id); // Premium tugagan
     }
-    return tg.send(chatId, convertText(await getRates(), req), { reply_markup: convertKeyboard(req.from) });
+    return tg.send(chatId, convertText(await getRates(), req, false, premium), { reply_markup: convertKeyboard(req.from) });
   }
 
   return tg.send(chatId, [
@@ -392,8 +525,9 @@ async function handleGroupMessage(tg, env, msg, cmd, args) {
   if (cmd === '/start' || cmd === '/yordam' || cmd === '/help') {
     return tg.send(chatId, groupHelpText(), reply);
   }
+  const premium = await isPremium(env, msg.from?.id);
   if (cmd === '/kurs') {
-    return tg.send(chatId, await ratesText(await getRates()), { ...reply, reply_markup: RATES_INLINE_GROUP });
+    return tg.send(chatId, await ratesText(await getRates(), premium), { ...reply, reply_markup: RATES_INLINE_GROUP });
   }
   if (cmd === '/k' || cmd === '/konvert') {
     const req = args ? parseConvert(args) : null;
@@ -401,7 +535,10 @@ async function handleGroupMessage(tg, env, msg, cmd, args) {
       return tg.send(chatId, '✏️ Summa va valyutani yozing, masalan: <code>/k 100 dollar</code>', reply);
     }
     req.from = req.from || 'USD';
-    return tg.send(chatId, convertText(await getRates(), req, true), reply);
+    if (isPremiumCurrency(req.from) && !premium) {
+      return tg.send(chatId, `⭐ <b>${req.from}</b> Premium valyuta. Premium olish uchun botga shaxsiy chatda /premium yozing.`, reply);
+    }
+    return tg.send(chatId, convertText(await getRates(), req, true, premium), reply);
   }
   if (cmd === '/obuna') {
     if (!(await isGroupAdmin(tg, msg))) {
@@ -438,9 +575,11 @@ async function handleCallback(tg, env, cq) {
   const inGroup = cq.message?.chat.type !== 'private';
   await trackChat(env, cq.message?.chat);
 
+  const premium = await isPremium(env, cq.from?.id);
+
   if (cq.data === 'refresh') {
     try {
-      await tg.edit(chatId, messageId, await ratesText(await getRates()), { reply_markup: inGroup ? RATES_INLINE_GROUP : RATES_INLINE });
+      await tg.edit(chatId, messageId, await ratesText(await getRates(), inGroup ? false : premium), { reply_markup: inGroup ? RATES_INLINE_GROUP : ratesInline(premium) });
       return tg.answerCallback(cq.id, '✅ Kurs yangilandi');
     } catch (e) {
       if (String(e.description).includes('not modified')) return tg.answerCallback(cq.id, 'Kurs o\'zgarmagan');
@@ -451,16 +590,30 @@ async function handleCallback(tg, env, cq) {
     await tg.answerCallback(cq.id);
     return tg.send(chatId, convertHelpText(), { reply_markup: convertKeyboard(await getConvertCurrency(env, chatId)) });
   }
+  if (cq.data === 'premium_info') {
+    await tg.answerCallback(cq.id);
+    return sendPremiumInfo(tg, env, chatId, cq.from?.id);
+  }
+  if (cq.data === 'conv_more') {
+    await tg.answerCallback(cq.id);
+    if (!premium) return sendPremiumInfo(tg, env, chatId, cq.from?.id);
+    const current = await getConvertCurrency(env, chatId);
+    return tg.send(chatId, `⭐ <b>${boldSans('Boshqa valyutalar')}</b>\n\nQaysi valyutani hisoblaymiz? 👇`, { reply_markup: premiumConvertKeyboard(current) });
+  }
   if (cq.data?.startsWith('conv_')) {
     const code = cq.data.slice(5);
-    if (!CONVERT_OPTIONS.some(([c]) => c === code)) return tg.answerCallback(cq.id);
+    if (code !== 'UZS' && !ALL_CURRENCIES[code]) return tg.answerCallback(cq.id);
+    if (isPremiumCurrency(code) && !premium) {
+      await tg.answerCallback(cq.id);
+      return sendPremiumInfo(tg, env, chatId, cq.from?.id);
+    }
     await setConvertCurrency(env, chatId, code);
     await tg.answerCallback(cq.id, '✅ Tanlandi. Endi summani yozing');
     return tg.send(chatId, convertChosenText(await getRates(), code), { reply_markup: convertKeyboard(code) });
   }
   if (cq.data === 'menu_rates') {
     await tg.answerCallback(cq.id);
-    return tg.send(chatId, await ratesText(await getRates()), { reply_markup: RATES_INLINE });
+    return tg.send(chatId, await ratesText(await getRates(), premium), { reply_markup: ratesInline(premium) });
   }
   if (cq.data === 'menu_sub') {
     await tg.answerCallback(cq.id);
@@ -481,18 +634,22 @@ export async function sendDaily(env) {
   const today = todayTashkent();
   const batch = Number(env.DAILY_BATCH) || DEFAULT_BATCH;
 
+  await ensureStateTable(env);
   const { results } = await env.DB.prepare(
-    'SELECT chat_id FROM subscribers WHERE last_sent IS NULL OR last_sent < ? ORDER BY chat_id LIMIT ?'
+    `SELECT s.chat_id, (p.until > datetime('now')) AS prem FROM subscribers s
+     LEFT JOIN premium p ON p.chat_id = s.chat_id
+     WHERE s.last_sent IS NULL OR s.last_sent < ? ORDER BY s.chat_id LIMIT ?`
   ).bind(today, batch).all();
   if (!results.length) return { sent: 0, removed: 0 };
 
   const rates = await getRates();
-  const text = morningText(rates, await weeklyUsdDiff(rates));
+  const weekDiff = await weeklyUsdDiff(rates);
 
   let sent = 0, removed = 0;
-  for (const { chat_id } of results) {
+  for (const { chat_id, prem } of results) {
+    const premium = !!prem || isAdmin(env, chat_id);
     try {
-      await tg.send(chat_id, text, { reply_markup: RATES_INLINE });
+      await tg.send(chat_id, morningText(rates, weekDiff, premium), { reply_markup: chat_id < 0 ? RATES_INLINE_GROUP : ratesInline(premium) });
       sent++;
     } catch (e) {
       // Bot bloklangan yoki chat o'chirilgan bo'lsa, obunachini ro'yxatdan olib tashlaymiz
@@ -517,7 +674,7 @@ async function setup(request, env) {
   await tg.call('setWebhook', {
     url: `${origin}/webhook`,
     secret_token: env.WEBHOOK_SECRET.trim(),
-    allowed_updates: ['message', 'callback_query'],
+    allowed_updates: ['message', 'callback_query', 'pre_checkout_query'],
     drop_pending_updates: true,
   });
   await tg.call('setMyCommands', {
@@ -526,6 +683,7 @@ async function setup(request, env) {
       { command: 'kurs', description: 'Bugungi kurs' },
       { command: 'konvert', description: 'Konvertatsiya' },
       { command: 'obuna', description: 'Kunlik obuna' },
+      { command: 'premium', description: '⭐ Premium: 12 ta valyuta' },
       { command: 'yordam', description: 'Yordam' },
     ],
   });
@@ -606,7 +764,14 @@ export default {
       const update = await request.json();
       const tg = new Telegram(env.BOT_TOKEN, env.TELEGRAM_API);
       try {
-        if (update.message) await handleMessage(tg, env, update.message);
+        if (update.pre_checkout_query) {
+          // To'lovdan oldin Telegram tasdiq so'raydi: 10 soniya ichida javob berish shart
+          const q = update.pre_checkout_query;
+          const ok = q.currency === 'XTR' && q.invoice_payload === 'premium';
+          await tg.call('answerPreCheckoutQuery', ok
+            ? { pre_checkout_query_id: q.id, ok: true }
+            : { pre_checkout_query_id: q.id, ok: false, error_message: 'To\'lovda xatolik. Qaytadan urinib ko\'ring.' });
+        } else if (update.message) await handleMessage(tg, env, update.message);
         else if (update.callback_query) await handleCallback(tg, env, update.callback_query);
       } catch (e) {
         console.error('Xabarni qayta ishlashda xato', e.message);

@@ -5,6 +5,11 @@ compatibility_date = "2025-09-01"
 # Worker manzilini yoqish: https://dollar-course.<subdomen>.workers.dev
 workers_dev = true
 
+# Oddiy (maxfiy bo'lmagan) sozlamalar. Bu yerda yozilmasa, har deploy'da o'chib ketadi.
+[vars]
+ADMIN_ID = "1295718505"   # /stat va bepul Premium faqat shu Telegram ID uchun
+PREMIUM_PRICE = "50"      # Premium narxi, Telegram Stars (oyiga)
+
 # Har kuni Toshkent vaqti bilan 8:00–8:59 oralig'ida har daqiqada (UTC 03:xx).
 # Har ishga tushishda bugun xabar olmagan obunachilarning bir guruhiga yuboriladi.
 [triggers]

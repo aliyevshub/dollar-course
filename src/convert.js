@@ -7,16 +7,35 @@ const ALIASES = {
   EUR: ['eur', '€', 'euro', 'evro', 'yevro', 'ewro', 'евро', 'эвро', 'евр'],
   RUB: ['rub', '₽', 'rubl', 'rubel', 'ruble', 'рубль', 'рубл', 'руб'],
   UZS: ['uzs', 'som', 'so\'m', 'sum', 'сум', 'сўм', 'сом'],
+  // Premium valyutalar
+  KZT: ['kzt', 'tenge', 'tenga', 'тенге', 'тнг', '₸'],
+  KGS: ['kgs', 'кгс'],
+  TJS: ['tjs', 'somoni', 'сомони'],
+  TMT: ['tmt', 'manat', 'манат'],
+  AFN: ['afn', 'afgani', 'afg\'oni', 'афгани'],
+  TRY: ['try', 'lira', 'лира', '₺'],
+  CNY: ['cny', 'yuan', 'юань', 'rmb', 'юан'],
+  KRW: ['krw', 'won', 'von', 'вон', '₩'],
+  AED: ['aed', 'dirham', 'дирхам'],
+  SAR: ['sar', 'riyal', 'riyol', 'риял', 'реал'],
+  GBP: ['gbp', 'funt', 'pound', 'фунт', '£'],
+  PLN: ['pln', 'zlot', 'злот'],
 };
 
 function findCurrency(word) {
   // Telefonlardagi turli apostroflarni (’ ‘ ʻ ʼ `) bitta ' ga keltiramiz
   const w = word.toLowerCase().trim().replace(/[’‘ʻʼ`]/g, "'").replace(/[.!?,]+$/, '');
   if (!w) return null;
+  // Avval to'liq mos keladiganini, bo'lmasa eng uzun mos boshlanishni olamiz
+  // ("somoni" -> TJS, "so'm" -> UZS, "dollar" -> USD)
+  let best = null, bestLen = 0;
   for (const [code, list] of Object.entries(ALIASES)) {
-    if (list.some((a) => w === a || (a.length > 2 && w.startsWith(a)))) return code;
+    for (const a of list) {
+      if (w === a) return code;
+      if (a.length > 2 && w.startsWith(a) && a.length > bestLen) { best = code; bestLen = a.length; }
+    }
   }
-  return null;
+  return best;
 }
 
 // Natija: { amount: 100, from: 'USD' } yoki null

@@ -23,6 +23,22 @@ test('konvertatsiya matnini tushunadi', () => {
   assert.deepEqual(parseConvert('100000 soʻm'), { amount: 100000, from: 'UZS' });
   assert.deepEqual(parseConvert('500 rubel'), { amount: 500, from: 'RUB' });
   assert.deepEqual(parseConvert('30 evro'), { amount: 30, from: 'EUR' });
+  // Premium valyutalar
+  assert.deepEqual(parseConvert('100 kzt'), { amount: 100, from: 'KZT' });
+  assert.deepEqual(parseConvert('5000 tenge'), { amount: 5000, from: 'KZT' });
+  assert.deepEqual(parseConvert('100 somoni'), { amount: 100, from: 'TJS' });
+  assert.deepEqual(parseConvert('50 lira'), { amount: 50, from: 'TRY' });
+  assert.deepEqual(parseConvert('1000 yuan'), { amount: 1000, from: 'CNY' });
+  assert.deepEqual(parseConvert('10000 won'), { amount: 10000, from: 'KRW' });
+  assert.deepEqual(parseConvert('100 dirham'), { amount: 100, from: 'AED' });
+  assert.deepEqual(parseConvert('100 riyal'), { amount: 100, from: 'SAR' });
+  assert.deepEqual(parseConvert('100 funt'), { amount: 100, from: 'GBP' });
+  assert.deepEqual(parseConvert('100 zloty'), { amount: 100, from: 'PLN' });
+  assert.deepEqual(parseConvert('100 kgs'), { amount: 100, from: 'KGS' });
+  assert.deepEqual(parseConvert('100 manat'), { amount: 100, from: 'TMT' });
+  assert.deepEqual(parseConvert('100 afn'), { amount: 100, from: 'AFN' });
+  assert.deepEqual(parseConvert("100 so'm"), { amount: 100, from: 'UZS' });
+  assert.deepEqual(parseConvert('100 som'), { amount: 100, from: 'UZS' });
   assert.equal(parseConvert('salom'), null);
   assert.equal(parseConvert('2 marta'), null);
   assert.equal(parseConvert('0 usd'), null);
