@@ -1,0 +1,16 @@
+name = "dollar-course"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+# Har kuni Toshkent vaqti bilan 9:00–9:59 oralig'ida har daqiqada (UTC 04:xx).
+# Har ishga tushishda bugun xabar olmagan obunachilarning bir guruhiga yuboriladi.
+[triggers]
+crons = ["* 4 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "dollar-course-db"
+database_id = "BU_YERGA_D1_ID_NI_QOYING"
+
+[observability]
+enabled = true

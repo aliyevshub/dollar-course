@@ -1,0 +1,4 @@
+# Lokal sinov uchun: bu faylni .dev.vars deb nusxalang va qiymatlarni yozing.
+# .dev.vars GitHub'ga yuklanmaydi.
+BOT_TOKEN=123456:ABC-sizning-tokeningiz
+WEBHOOK_SECRET=uzun-tasodifiy-satr

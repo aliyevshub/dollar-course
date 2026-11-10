@@ -1,0 +1,17 @@
+{
+  "name": "dollar-course",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Telegram valyuta kursi boti (Cloudflare Workers + D1)",
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute dollar-course-db --remote --file=schema.sql",
+    "db:init:local": "wrangler d1 execute dollar-course-db --local --file=schema.sql",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
