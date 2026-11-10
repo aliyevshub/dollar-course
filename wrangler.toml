@@ -5,10 +5,10 @@ compatibility_date = "2025-09-01"
 # Worker manzilini yoqish: https://dollar-course.<subdomen>.workers.dev
 workers_dev = true
 
-# Har kuni Toshkent vaqti bilan 9:00–9:59 oralig'ida har daqiqada (UTC 04:xx).
+# Har kuni Toshkent vaqti bilan 8:00–8:59 oralig'ida har daqiqada (UTC 03:xx).
 # Har ishga tushishda bugun xabar olmagan obunachilarning bir guruhiga yuboriladi.
 [triggers]
-crons = ["* 4 * * *"]
+crons = ["* 3 * * *"]
 
 [[d1_databases]]
 binding = "DB"

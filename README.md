@@ -9,7 +9,7 @@ O'zbekiston Markaziy banki (CBU) rasmiy kurslarini ko'rsatadigan Telegram bot.
 | `/start` | Salomlashish va bot haqida ma'lumot |
 | 💵 Bugungi kurs · `/kurs` | USD, EUR, RUB kursi va kunlik o'zgarish |
 | 🔄 Konvertatsiya | `100 usd`, `50 eur`, `1 000 000 so'm` deb yozish kifoya |
-| 🔔 Kunlik obuna · `/obuna` | Har kuni 9:00 da (Toshkent) kurs, haftalik o'zgarish bilan |
+| 🔔 Kunlik obuna · `/obuna` | Har kuni 8:00 da (Toshkent) kurs, haftalik o'zgarish bilan |
 | ℹ️ Yordam · `/yordam` | Barcha buyruqlar |
 
 ## 🧱 Tuzilishi
@@ -59,7 +59,7 @@ https://dollar-course.<sizning-subdomen>.workers.dev/setup?key=<WEBHOOK_SECRET>
 Shundan keyin GitHub'ga har bir push'da Cloudflare yangi versiyani o'zi joylaydi.
 
 ## ⏰ Kunlik yuborish qanday ishlaydi
-Cron Toshkent vaqti bilan **9:00–9:59** oralig'ida har daqiqada ishlaydi (`* 4 * * *`, UTC).
+Cron Toshkent vaqti bilan **8:00–8:59** oralig'ida har daqiqada ishlaydi (`* 3 * * *`, UTC).
 Har safar bugun hali xabar olmagan **40 ta** obunachiga yuboradi (bepul tarifda bitta
 ishga tushishda 50 ta tashqi so'rov limiti bor). Bu soatiga ~2 400 obunachiga yetadi.
 Pullik tarifda `DAILY_BATCH` o'zgaruvchisi bilan ko'paytirish mumkin.

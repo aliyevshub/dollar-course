@@ -72,7 +72,7 @@ function welcomeText(firstName) {
     `<b>✨ ${boldSans('Nima qila olaman')}:</b>`,
     '💵 <b>Bugungi kurs</b>: USD, EUR, RUB',
     '🔄 <b>Konvertatsiya</b>: <code>100 usd</code> deb yozing, hisoblab beraman',
-    '🔔 <b>Kunlik obuna</b>: har kuni ertalab 9:00 da kurs',
+    '🔔 <b>Kunlik obuna</b>: har kuni ertalab 8:00 da kurs',
     'ℹ️ <b>Yordam</b>: barcha buyruqlar',
     '',
     '<blockquote>📅 Kurslar har kuni avtomatik yangilanadi</blockquote>',
@@ -85,21 +85,24 @@ function helpText() {
   return [
     `ℹ️ <b>${boldSans('Yordam')}</b>`,
     '',
-    '<b>Tugmalar:</b>',
-    '💵 <b>Bugungi kurs</b>: CBU rasmiy kurslari',
-    '🔄 <b>Konvertatsiya</b>: summani hisoblash',
-    '🔔 <b>Kunlik obuna</b>: yoqish yoki o\'chirish',
+    '📌 <b>Tugmalar</b>',
+    '💵 <b>Bugungi kurs</b>: Markaziy bankning bugungi kurslari',
+    '🔄 <b>Konvertatsiya</b>: summani boshqa valyutaga o\'girish',
+    '🔔 <b>Kunlik obuna</b>: har kuni ertalab kursni olish (yoqish yoki o\'chirish)',
     '',
-    '<b>Buyruqlar:</b>',
+    '🔄 <b>Konvertatsiya qanday ishlaydi?</b>',
+    '1️⃣ <b>Konvertatsiya</b> tugmasini bosing',
+    '2️⃣ Valyutani tanlang: dollar, yevro, rubl yoki so\'m',
+    '3️⃣ Summani yozing, masalan: <code>100</code>',
+    '',
+    '💡 <b>Tezroq usul:</b> summa va valyutani birga yozing:',
+    '<code>100 dollar</code> · <code>50 yevro</code> · <code>1000 rubl</code> · <code>500000 so\'m</code>',
+    '',
+    '⌨️ <b>Buyruqlar</b>',
     '/kurs: bugungi kurs',
     '/konvert: konvertatsiya',
-    '/obuna: kunlik obunani yoqish yoki o\'chirish',
-    '/yordam: shu xabar',
-    '',
-    '<b>Konvertatsiya:</b> valyutani tanlab, faqat son yozing',
-    '<i>yoki to\'g\'ridan-to\'g\'ri:</i>',
-    '<code>100 usd</code>  ·  <code>50 eur</code>  ·  <code>1000 rub</code>',
-    '<code>1 000 000 so\'m</code>  ·  <code>$250</code>',
+    '/obuna: kunlik obuna',
+    '/yordam: yordam',
     '',
     '<blockquote>🏦 Manba: O\'zbekiston Markaziy banki (cbu.uz)</blockquote>',
   ].join('\n');
@@ -226,7 +229,7 @@ async function toggleSubscription(env, chatId, firstName) {
   return [
     '✅ <b>Ajoyib!</b> Siz kunlik obunaga yozildingiz.',
     '',
-    '⏰ Har kuni soat <b>9:00</b> da kursni o\'zim yuboraman.',
+    '⏰ Har kuni soat <b>8:00</b> da kursni o\'zim yuboraman.',
     '🔕 Bekor qilish uchun tugmani yana bosing.',
   ].join('\n');
 }
@@ -265,11 +268,21 @@ async function handleMessage(tg, env, msg) {
   }
 
   return tg.send(chatId, [
-    '🤔 Tushunmadim.',
+    unknownIntro(msg),
     '',
-    'Konvertatsiya uchun summa va valyutani yozing, masalan: <code>100 usd</code>',
+    'Men valyuta kursini ko\'rsataman va hisoblayman. Masalan, yozing: <code>100 dollar</code>',
     'Yoki quyidagi tugmalardan birini tanlang 👇',
   ].join('\n'), { reply_markup: MENU_INLINE });
+}
+
+// Tushunarsiz xabarga, turiga qarab, birinchi qator
+function unknownIntro(msg) {
+  if (msg.sticker) return '😊 <b>Stiker yoqdi!</b> Lekin men faqat valyuta kursi bilan ishlayman.';
+  if (msg.photo || msg.video || msg.animation) return '📷 <b>Men rasm va videolarni ko\'ra olmayman.</b>';
+  if (msg.voice || msg.video_note || msg.audio) return '🎤 <b>Ovozli xabarni tinglay olmayman</b>, iltimos yozib yuboring.';
+  if (msg.document) return '📄 <b>Men fayllarni o\'qiy olmayman.</b>';
+  if (msg.text) return '🤔 <b>Kechirasiz, buni tushunmadim.</b>';
+  return '🤷 <b>Bu turdagi xabarni tushunmayman.</b>';
 }
 
 async function handleCallback(tg, env, cq) {
@@ -312,7 +325,7 @@ async function handleCallback(tg, env, cq) {
 }
 
 // ---------- Kunlik yuborish (cron) ----------
-// Cron soat 9:00–9:59 (Toshkent) oralig'ida har daqiqada ishlaydi.
+// Cron soat 8:00–8:59 (Toshkent) oralig'ida har daqiqada ishlaydi.
 // Har safar bugun hali xabar olmagan obunachilardan bir guruhiga yuboradi.
 export async function sendDaily(env) {
   const tg = new Telegram(env.BOT_TOKEN, env.TELEGRAM_API);
