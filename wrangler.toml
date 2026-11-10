@@ -10,7 +10,7 @@ crons = ["* 4 * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "dollar-course-db"
-database_id = "BU_YERGA_D1_ID_NI_QOYING"
+database_id = "ca33d2f7-6f3d-4766-925b-1cf17ec3fa8f"
 
 [observability]
 enabled = true

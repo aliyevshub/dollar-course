@@ -1,4 +1,4 @@
-# 💵 Valyuta Kursi Boti
+# 💵 Dollar kursi | Курс доллара
 
 O'zbekiston Markaziy banki (CBU) rasmiy kurslarini ko'rsatadigan Telegram bot.
 **Cloudflare Workers**da ishlaydi: kompyuter o'chiq bo'lsa ham 24/7 javob beradi, bepul tarifda.

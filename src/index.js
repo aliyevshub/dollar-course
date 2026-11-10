@@ -42,7 +42,7 @@ const DEFAULT_BATCH = 40;
 // ---------- Xabar matnlari ----------
 function welcomeText(firstName) {
   return [
-    `💵 <b>${boldSans('Valyuta Kursi Boti')}</b>`,
+    `💵 <b>${boldSans('Dollar Kursi')}</b>`,
     '',
     `Assalomu alaykum, <b>${esc(firstName || 'do\'stim')}</b>! 👋`,
     '',
@@ -287,7 +287,7 @@ async function setup(request, env) {
   // Botni birinchi marta ochganda bo'sh ekranda chiqadigan matn
   await tg.call('setMyDescription', {
     description: [
-      `💵 ${boldSans('Valyuta Kursi Boti')}`,
+      `💵 ${boldSans('Dollar Kursi')}`,
       '',
       'Markaziy bankning rasmiy kurslari:',
       '✅ USD, EUR, RUB kurslari',
