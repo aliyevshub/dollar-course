@@ -53,19 +53,13 @@ export function tashkentTime(now = new Date()) {
 
 // Kurslar jadvali (monospace blokda raqamlar tekis turadi)
 export function ratesTable(rates, codes = Object.keys(CURRENCIES)) {
-  // Dollar alohida qatorda, qalin va yirik raqamlar bilan (eng ko'p qidiriladigan kurs)
-  let usdLine = '';
-  if (codes[0] === 'USD' && rates.USD) {
-    usdLine = `🇺🇸 <b>USD   ${boldSans(money(rates.USD.rate))}</b>   ${diffBadge(rates.USD.diff)}\n`;
-    codes = codes.slice(1);
-  }
   const rows = codes
     .filter((code) => rates[code])
     .map((code) => {
       const r = rates[code];
       return `${ALL_CURRENCIES[code].flag} ${code}  ${money(r.rate).padStart(10)}  ${diffBadge(r.diff)}`;
     });
-  return usdLine + (rows.length ? `<pre>${rows.join('\n')}</pre>` : '');
+  return `<pre>${rows.join('\n')}</pre>`;
 }
 
 // Dollar haqida bir qatorlik izoh
