@@ -28,6 +28,19 @@ const MAIN_MENU = {
   is_persistent: true,
 };
 
+// Konvertatsiya: valyuta tanlash tugmalari (tanlangani ✅ bilan belgilanadi)
+const CONVERT_OPTIONS = [
+  ['USD', '🇺🇸 Dollar → so\'m'],
+  ['EUR', '🇪🇺 Yevro → so\'m'],
+  ['RUB', '🇷🇺 Rubl → so\'m'],
+  ['UZS', '🇺🇿 So\'m → valyuta'],
+];
+
+function convertKeyboard(selected) {
+  const btn = ([code, label]) => ({ text: (code === selected ? '✅ ' : '') + label, callback_data: `conv_${code}` });
+  return { inline_keyboard: [CONVERT_OPTIONS.slice(0, 2).map(btn), CONVERT_OPTIONS.slice(2).map(btn)] };
+}
+
 // Xabarning o'zi ostida chiqadigan tugmalar
 const MENU_INLINE = {
   inline_keyboard: [
@@ -79,10 +92,12 @@ function helpText() {
     '',
     '<b>Buyruqlar:</b>',
     '/kurs: bugungi kurs',
+    '/konvert: konvertatsiya',
     '/obuna: kunlik obunani yoqish yoki o\'chirish',
     '/yordam: shu xabar',
     '',
-    '<b>Konvertatsiya misollari:</b>',
+    '<b>Konvertatsiya:</b> valyutani tanlab, faqat son yozing',
+    '<i>yoki to\'g\'ridan-to\'g\'ri:</i>',
     '<code>100 usd</code>  ·  <code>50 eur</code>  ·  <code>1000 rub</code>',
     '<code>1 000 000 so\'m</code>  ·  <code>$250</code>',
     '',
@@ -94,13 +109,25 @@ function convertHelpText() {
   return [
     `🔄 <b>${boldSans('Konvertatsiya')}</b>`,
     '',
-    'Summa va valyutani yozing, men hisoblab beraman:',
+    'Qaysi valyutani hisoblaymiz? 👇',
     '',
-    '<code>100 usd</code>: dollarni so\'mga',
-    '<code>50 eur</code>: yevroni so\'mga',
-    '<code>1000 rub</code>: rublni so\'mga',
-    '<code>1 000 000 so\'m</code>: so\'mni valyutalarga',
+    '<i>Tanlaganingizdan keyin faqat summani yozasiz, masalan:</i> <code>100</code>',
   ].join('\n');
+}
+
+function convertChosenText(rates, code) {
+  const label = CONVERT_OPTIONS.find(([c]) => c === code)[1];
+  const lines = [
+    `🔄 <b>${boldSans('Konvertatsiya')}</b>`,
+    '',
+    `Tanlandi: <b>${label}</b>`,
+    '',
+    code === 'UZS'
+      ? '✏️ Endi so\'mdagi summani yozing, masalan: <code>1000000</code>'
+      : '✏️ Endi summani yozing, masalan: <code>100</code>',
+  ];
+  if (code !== 'UZS' && rates[code]) lines.push('', `<i>Kurs: 1 ${code} = ${money(rates[code].rate)} so'm</i>`);
+  return lines.join('\n');
 }
 
 async function ratesText(rates) {
@@ -152,8 +179,31 @@ function convertText(rates, { amount, from }) {
     lines.push(`${CURRENCIES[from].flag} <b>${smartMoney(amount)} ${from}</b> = 🇺🇿 <b>${smartMoney(amount * r.rate)} so'm</b>`);
     lines.push('', `<i>Kurs: 1 ${from} = ${money(r.rate)} so'm</i>`);
   }
-  lines.push('', '💡 <i>Boshqa misollar:</i> <code>50 eur</code>, <code>1000 rub</code>, <code>1 000 000 so\'m</code>');
+  lines.push('', '✏️ <i>Yana summa yozing yoki valyutani almashtiring</i> 👇');
   return lines.join('\n');
+}
+
+// ---------- Konvertatsiya uchun tanlangan valyuta (D1) ----------
+let stateTableReady = false;
+async function ensureStateTable(env) {
+  if (stateTableReady) return;
+  await env.DB.prepare(
+    'CREATE TABLE IF NOT EXISTS convert_state (chat_id INTEGER PRIMARY KEY, currency TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'
+  ).run();
+  stateTableReady = true;
+}
+
+async function getConvertCurrency(env, chatId) {
+  await ensureStateTable(env);
+  const row = await env.DB.prepare('SELECT currency FROM convert_state WHERE chat_id = ?').bind(chatId).first();
+  return row?.currency || null;
+}
+
+async function setConvertCurrency(env, chatId, code) {
+  await ensureStateTable(env);
+  await env.DB.prepare(
+    'INSERT INTO convert_state (chat_id, currency) VALUES (?, ?) ON CONFLICT(chat_id) DO UPDATE SET currency = excluded.currency, updated_at = datetime(\'now\')'
+  ).bind(chatId, code).run();
 }
 
 // ---------- Obuna (D1 bazasi) ----------
@@ -200,13 +250,18 @@ async function handleMessage(tg, env, msg) {
   if (cmd === '/obuna' || text === BTN.SUBSCRIBE) {
     return tg.send(chatId, await toggleSubscription(env, chatId, firstName), { reply_markup: MAIN_MENU });
   }
-  if (text === BTN.CONVERT) {
-    return tg.send(chatId, convertHelpText(), { reply_markup: MAIN_MENU });
+  if (cmd === '/konvert' || text === BTN.CONVERT) {
+    return tg.send(chatId, convertHelpText(), { reply_markup: convertKeyboard(await getConvertCurrency(env, chatId)) });
   }
 
   const req = text ? parseConvert(text) : null;
   if (req) {
-    return tg.send(chatId, convertText(await getRates(), req), { reply_markup: MAIN_MENU });
+    if (req.from) {
+      await setConvertCurrency(env, chatId, req.from); // "50 eur" yozsa, keyingi sonlar ham yevroda hisoblanadi
+    } else {
+      req.from = (await getConvertCurrency(env, chatId)) || 'USD';
+    }
+    return tg.send(chatId, convertText(await getRates(), req), { reply_markup: convertKeyboard(req.from) });
   }
 
   return tg.send(chatId, [
@@ -232,7 +287,14 @@ async function handleCallback(tg, env, cq) {
   }
   if (cq.data === 'convert_help') {
     await tg.answerCallback(cq.id);
-    return tg.send(chatId, convertHelpText(), { reply_markup: MAIN_MENU });
+    return tg.send(chatId, convertHelpText(), { reply_markup: convertKeyboard(await getConvertCurrency(env, chatId)) });
+  }
+  if (cq.data?.startsWith('conv_')) {
+    const code = cq.data.slice(5);
+    if (!CONVERT_OPTIONS.some(([c]) => c === code)) return tg.answerCallback(cq.id);
+    await setConvertCurrency(env, chatId, code);
+    await tg.answerCallback(cq.id, '✅ Tanlandi. Endi summani yozing');
+    return tg.send(chatId, convertChosenText(await getRates(), code), { reply_markup: convertKeyboard(code) });
   }
   if (cq.data === 'menu_rates') {
     await tg.answerCallback(cq.id);
@@ -300,6 +362,7 @@ async function setup(request, env) {
     commands: [
       { command: 'start', description: 'Botni boshlash' },
       { command: 'kurs', description: 'Bugungi kurs' },
+      { command: 'konvert', description: 'Konvertatsiya' },
       { command: 'obuna', description: 'Kunlik obuna' },
       { command: 'yordam', description: 'Yordam' },
     ],

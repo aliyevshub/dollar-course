@@ -3,7 +3,7 @@
 
 // Odamlar ko'p yozadigan xato va qisqa variantlar ham bor ("dolar", "долар", "rubel"...)
 const ALIASES = {
-  USD: ['usd', '$', 'dollar', 'dolar', 'dollor', 'dolor', 'dollr', 'dlr', 'доллар', 'долар', 'долл', 'дол', 'бакс'],
+  USD: ['usd', '$', 'dol', 'dlr', 'дол', 'бакс'], // "dol..." — dollar, dolar, dolr, dollr...
   EUR: ['eur', '€', 'euro', 'evro', 'yevro', 'ewro', 'евро', 'эвро', 'евр'],
   RUB: ['rub', '₽', 'rubl', 'rubel', 'ruble', 'рубль', 'рубл', 'руб'],
   UZS: ['uzs', 'som', 'so\'m', 'sum', 'сум', 'сўм', 'сом'],
@@ -30,7 +30,7 @@ export function parseConvert(text) {
 
   const before = m[1].trim();
   const after = m[3].trim();
-  if (!before && !after) return { amount, from: 'USD' }; // faqat raqam yozilsa, dollar deb olamiz
+  if (!before && !after) return { amount, from: null }; // faqat raqam: valyutani foydalanuvchi tanlagani bo'yicha olamiz
 
   const from = findCurrency(after) || findCurrency(before);
   return from ? { amount, from } : null;

@@ -12,7 +12,9 @@ test('konvertatsiya matnini tushunadi', () => {
   assert.deepEqual(parseConvert("1 000 000 so'm"), { amount: 1000000, from: 'UZS' });
   assert.deepEqual(parseConvert('500000 sum'), { amount: 500000, from: 'UZS' });
   assert.deepEqual(parseConvert('12,5 dollar'), { amount: 12.5, from: 'USD' });
-  assert.deepEqual(parseConvert('100'), { amount: 100, from: 'USD' });
+  assert.deepEqual(parseConvert('100'), { amount: 100, from: null });
+  assert.deepEqual(parseConvert('10dolr'), { amount: 10, from: 'USD' });
+  assert.deepEqual(parseConvert('5 dollar'), { amount: 5, from: 'USD' });
   assert.deepEqual(parseConvert('12dolar'), { amount: 12, from: 'USD' });
   assert.deepEqual(parseConvert('12 dolar'), { amount: 12, from: 'USD' });
   assert.deepEqual(parseConvert('50 долар'), { amount: 50, from: 'USD' });
