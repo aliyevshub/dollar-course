@@ -2,6 +2,9 @@ name = "dollar-course"
 main = "src/index.js"
 compatibility_date = "2025-09-01"
 
+# Worker manzilini yoqish: https://dollar-course.<subdomen>.workers.dev
+workers_dev = true
+
 # Har kuni Toshkent vaqti bilan 9:00–9:59 oralig'ida har daqiqada (UTC 04:xx).
 # Har ishga tushishda bugun xabar olmagan obunachilarning bir guruhiga yuboriladi.
 [triggers]
