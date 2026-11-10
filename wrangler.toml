@@ -8,7 +8,8 @@ workers_dev = true
 # Oddiy (maxfiy bo'lmagan) sozlamalar. Bu yerda yozilmasa, har deploy'da o'chib ketadi.
 [vars]
 ADMIN_ID = "1295718505"   # /stat va bepul Premium faqat shu Telegram ID uchun
-PREMIUM_PRICE = "50"      # Premium narxi, Telegram Stars (oyiga)
+PREMIUM_PRICE = "49"        # Premium oylik narxi, Telegram Stars (30 kunlik avtomatik obuna)
+PREMIUM_YEAR_PRICE = "489"  # Premium yillik narxi, Telegram Stars (365 kun, bir martalik to'lov)
 
 # Har kuni Toshkent vaqti bilan 8:00–8:59 oralig'ida har daqiqada (UTC 03:xx).
 # Har ishga tushishda bugun xabar olmagan obunachilarning bir guruhiga yuboriladi.

@@ -23,7 +23,27 @@ export const PREMIUM_CURRENCIES = {
   SAR: { flag: '🇸🇦', name: 'Saudiya riyoli' },
   GBP: { flag: '🇬🇧', name: 'Angliya funti' },
   PLN: { flag: '🇵🇱', name: 'Polsha zlotiysi' },
+  AZN: { flag: '🇦🇿', name: 'Ozarbayjon manati' },
+  BYN: { flag: '🇧🇾', name: 'Belarus rubli' },
+  UAH: { flag: '🇺🇦', name: 'Ukraina grivnasi' },
+  GEL: { flag: '🇬🇪', name: 'Gruziya larisi' },
+  AMD: { flag: '🇦🇲', name: 'Armaniston drami' },
+  JPY: { flag: '🇯🇵', name: 'Yaponiya iyenasi' },
+  INR: { flag: '🇮🇳', name: 'Hindiston rupiyasi' },
+  MYR: { flag: '🇲🇾', name: 'Malayziya ringgiti' },
+  THB: { flag: '🇹🇭', name: 'Tailand bati' },
+  QAR: { flag: '🇶🇦', name: 'Qatar riali' },
+  KWD: { flag: '🇰🇼', name: 'Quvayt dinori' },
+  EGP: { flag: '🇪🇬', name: 'Misr funti' },
+  CHF: { flag: '🇨🇭', name: 'Shveytsariya franki' },
+  CAD: { flag: '🇨🇦', name: 'Kanada dollari' },
+  AUD: { flag: '🇦🇺', name: 'Avstraliya dollari' },
+  CZK: { flag: '🇨🇿', name: 'Chexiya kronasi' },
 };
+
+// Qisqa ko'rinishda chiqadigan eng mashhur valyutalar
+export const TOP_RATES = ['USD', 'EUR', 'RUB', 'KZT', 'TRY', 'CNY', 'KRW', 'AED'];
+export const TOP_PREMIUM = ['KZT', 'TRY', 'CNY', 'KRW', 'AED', 'GBP'];
 
 export const ALL_CURRENCIES = { ...CURRENCIES, ...PREMIUM_CURRENCIES };
 export const isPremiumCurrency = (code) => !!PREMIUM_CURRENCIES[code];

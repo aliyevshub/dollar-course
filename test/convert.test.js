@@ -39,6 +39,12 @@ test('konvertatsiya matnini tushunadi', () => {
   assert.deepEqual(parseConvert('100 afn'), { amount: 100, from: 'AFN' });
   assert.deepEqual(parseConvert("100 so'm"), { amount: 100, from: 'UZS' });
   assert.deepEqual(parseConvert('100 som'), { amount: 100, from: 'UZS' });
+  for (const [txt, code] of [['100 azn', 'AZN'], ['100 byn', 'BYN'], ['100 grivna', 'UAH'], ['100 lari', 'GEL'],
+    ['100 dram', 'AMD'], ['1000 yen', 'JPY'], ['100 rupiy', 'INR'], ['100 ringgit', 'MYR'], ['100 baht', 'THB'],
+    ['100 qar', 'QAR'], ['100 dinor', 'KWD'], ['100 egp', 'EGP'], ['100 frank', 'CHF'], ['100 cad', 'CAD'],
+    ['100 aud', 'AUD'], ['100 krona', 'CZK'], ['50 yevro', 'EUR'], ['50 lira', 'TRY'], ['100 manat', 'TMT']]) {
+    assert.deepEqual(parseConvert(txt), { amount: Number(txt.split(' ')[0]), from: code }, txt);
+  }
   assert.equal(parseConvert('salom'), null);
   assert.equal(parseConvert('2 marta'), null);
   assert.equal(parseConvert('0 usd'), null);

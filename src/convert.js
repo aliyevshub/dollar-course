@@ -20,6 +20,22 @@ const ALIASES = {
   SAR: ['sar', 'riyal', 'riyol', 'риял', 'реал'],
   GBP: ['gbp', 'funt', 'pound', 'фунт', '£'],
   PLN: ['pln', 'zlot', 'злот'],
+  AZN: ['azn', 'ozarbayjon', 'азн'],
+  BYN: ['byn', 'belarus', 'бел'],
+  UAH: ['uah', 'grivna', 'griven', 'гривн', '₴'],
+  GEL: ['gel', 'lari', 'лари', '₾'],
+  AMD: ['amd', 'dram', 'драм', '֏'],
+  JPY: ['jpy', 'yen', 'iyena', 'йен', 'иен'],
+  INR: ['inr', 'rupi', 'рупи', '₹'],
+  MYR: ['myr', 'ringgit', 'ринггит'],
+  THB: ['thb', 'baht', 'bat', 'бат', '฿'],
+  QAR: ['qar', 'qatar', 'катар'],
+  KWD: ['kwd', 'dinor', 'dinar', 'динар'],
+  EGP: ['egp', 'misr', 'египет'],
+  CHF: ['chf', 'frank', 'franc', 'франк'],
+  CAD: ['cad', 'kanada', 'канад'],
+  AUD: ['aud', 'avstral', 'австрал'],
+  CZK: ['czk', 'krona', 'chex', 'крон'],
 };
 
 function findCurrency(word) {
