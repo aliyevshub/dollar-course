@@ -272,7 +272,7 @@ async function setup(request, env) {
 
   await tg.call('setWebhook', {
     url: `${origin}/webhook`,
-    secret_token: env.WEBHOOK_SECRET,
+    secret_token: env.WEBHOOK_SECRET.trim(),
     allowed_updates: ['message', 'callback_query'],
     drop_pending_updates: true,
   });
@@ -301,8 +301,9 @@ async function setup(request, env) {
     short_description: '💵 CBU rasmiy kurslari, konvertatsiya va kunlik xabar',
   });
 
-  return new Response(`✅ Tayyor! Webhook: ${origin}/webhook\nEndi Telegram'da botga /start yozing.`, {
-    headers: { 'content-type': 'text/plain; charset=utf-8' },
+  const me = await tg.call('getMe');
+  return new Response(`✅ Tayyor! Bot @${me.username} ulandi.\nWebhook: ${origin}/webhook\nEndi Telegram'da botga /start yozing.`, {
+    headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
   });
 }
 
@@ -316,7 +317,26 @@ export default {
     }
 
     if (url.pathname === '/setup') {
-      if (url.searchParams.get('key') !== env.WEBHOOK_SECRET) return new Response('Ruxsat yo\'q', { status: 403 });
+      const expected = env.WEBHOOK_SECRET.trim();
+      const given = (url.searchParams.get('key') || '').trim();
+      if (given !== expected) {
+        // Kalitning o'zini ko'rsatmaymiz, faqat nima noto'g'ri ekanini aytamiz
+        const hint = !given
+          ? "Manzil oxirida ?key=... yo'q."
+          : given === 'WEBHOOK_SECRET'
+            ? "key= dan keyin kalit NOMI emas, uning QIYMATI yozilishi kerak."
+            : `Siz yozgan kalit ${given.length} belgi, Cloudflare'dagi WEBHOOK_SECRET esa ${expected.length} belgi.`;
+        return new Response(`Ruxsat yo'q: kalit mos kelmadi.\n${hint}`, {
+          status: 403,
+          headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
+        });
+      }
+      if (!/^[A-Za-z0-9_-]{1,256}$/.test(expected)) {
+        return new Response("WEBHOOK_SECRET da faqat lotin harflari, raqamlar, - va _ bo'lishi mumkin. Cloudflare'da uni o'zgartiring.", {
+          status: 400,
+          headers: { 'content-type': 'text/plain; charset=utf-8' },
+        });
+      }
       try {
         return await setup(request, env);
       } catch (e) {
@@ -326,7 +346,7 @@ export default {
 
     if (url.pathname === '/webhook' && request.method === 'POST') {
       // Faqat Telegram'dan kelgan so'rovlarni qabul qilamiz
-      if (request.headers.get('X-Telegram-Bot-Api-Secret-Token') !== env.WEBHOOK_SECRET) {
+      if (request.headers.get('X-Telegram-Bot-Api-Secret-Token') !== env.WEBHOOK_SECRET.trim()) {
         return new Response('Ruxsat yo\'q', { status: 403 });
       }
       const update = await request.json();
