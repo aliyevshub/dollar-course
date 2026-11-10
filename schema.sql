@@ -34,5 +34,7 @@ CREATE TABLE IF NOT EXISTS payments (
   chat_id    INTEGER NOT NULL,
   amount     INTEGER NOT NULL,              -- Stars
   recurring  INTEGER NOT NULL DEFAULT 0,
+  plan       TEXT,                          -- month | year
+  refunded   INTEGER NOT NULL DEFAULT 0,    -- /refund bilan qaytarilgan
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

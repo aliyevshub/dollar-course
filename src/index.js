@@ -262,8 +262,14 @@ async function ensureStateTable(env) {
     env.DB.prepare('INSERT OR IGNORE INTO users (chat_id, type, name, created_at, last_seen) SELECT chat_id, CASE WHEN chat_id < 0 THEN \'group\' ELSE \'private\' END, first_name, created_at, created_at FROM subscribers'),
   ]);
   // Avvalroq yaratilgan premium jadvaliga yangi ustunlar (bor bo'lsa, xato e'tiborsiz qoldiriladi)
-  for (const col of ['plan TEXT NOT NULL DEFAULT \'month\'', 'reminded INTEGER NOT NULL DEFAULT 0']) {
-    try { await env.DB.prepare(`ALTER TABLE premium ADD COLUMN ${col}`).run(); } catch { /* ustun allaqachon bor */ }
+  const newColumns = [
+    ['premium', 'plan TEXT NOT NULL DEFAULT \'month\''],
+    ['premium', 'reminded INTEGER NOT NULL DEFAULT 0'],
+    ['payments', 'plan TEXT'],
+    ['payments', 'refunded INTEGER NOT NULL DEFAULT 0'],
+  ];
+  for (const [table, col] of newColumns) {
+    try { await env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${col}`).run(); } catch { /* ustun allaqachon bor */ }
   }
   tablesReady = true;
 }
@@ -394,8 +400,8 @@ async function handlePayment(tg, env, msg) {
   await env.DB.batch([
     env.DB.prepare('INSERT INTO premium (chat_id, until, charge_id, plan, reminded) VALUES (?, ?, ?, ?, 0) ON CONFLICT(chat_id) DO UPDATE SET until = excluded.until, charge_id = excluded.charge_id, plan = excluded.plan, reminded = 0, updated_at = datetime(\'now\')')
       .bind(userId, toSql(until), pay.telegram_payment_charge_id, year ? 'year' : 'month'),
-    env.DB.prepare('INSERT OR IGNORE INTO payments (charge_id, chat_id, amount, recurring) VALUES (?, ?, ?, ?)')
-      .bind(pay.telegram_payment_charge_id, userId, pay.total_amount, pay.is_recurring ? 1 : 0),
+    env.DB.prepare('INSERT OR IGNORE INTO payments (charge_id, chat_id, amount, recurring, plan) VALUES (?, ?, ?, ?, ?)')
+      .bind(pay.telegram_payment_charge_id, userId, pay.total_amount, pay.is_recurring ? 1 : 0, year ? 'year' : 'month'),
   ]);
   if (!year && pay.is_recurring && !pay.is_first_recurring) {
     return tg.send(msg.chat.id, `⭐ Premium yangilandi: <b>${dateUz(until)}</b> gacha. Rahmat! 🙏`);
@@ -437,6 +443,91 @@ async function sendYearReminders(tg, env, limit) {
   return sent;
 }
 
+// ---------- To'lovni qaytarish (faqat admin) ----------
+const planName = (row, env) => (row.plan || (row.amount >= yearPrice(env) ? 'year' : 'month')) === 'year' ? 'yillik' : 'oylik';
+
+async function lastPayment(env, userId) {
+  await ensureStateTable(env);
+  return env.DB.prepare(
+    'SELECT charge_id, chat_id, amount, recurring, plan, created_at FROM payments WHERE chat_id = ? AND refunded = 0 ORDER BY created_at DESC LIMIT 1'
+  ).bind(userId).first();
+}
+
+// /refund — oxirgi to'lovlar ro'yxati; /refund <ID> — tasdiqlash so'rovi
+async function refundCommand(tg, env, chatId, args) {
+  const userId = Number(args.trim());
+  if (!args.trim()) {
+    await ensureStateTable(env);
+    const { results } = await env.DB.prepare(
+      'SELECT chat_id, amount, plan, created_at FROM payments WHERE refunded = 0 ORDER BY created_at DESC LIMIT 10'
+    ).all();
+    const lines = results.map((r) => `• <code>${r.chat_id}</code>: ${r.amount} ⭐ (${planName(r, env)}), ${dateUz(fromSql(r.created_at))}`);
+    return tg.send(chatId, [
+      '💳 <b>To\'lovni qaytarish</b>',
+      '',
+      'Foydalanish: <code>/refund ID</code>',
+      '',
+      results.length ? '<b>Oxirgi to\'lovlar:</b>' : '<i>Hali to\'lovlar yo\'q.</i>',
+      ...lines,
+    ].join('\n'));
+  }
+  if (!Number.isSafeInteger(userId) || userId <= 0) {
+    return tg.send(chatId, '⚠️ ID noto\'g\'ri. Masalan: <code>/refund 123456789</code>');
+  }
+  const pay = await lastPayment(env, userId);
+  if (!pay) return tg.send(chatId, `⚠️ <code>${userId}</code> uchun qaytariladigan to'lov topilmadi.`);
+  const days = Math.floor((Date.now() - fromSql(pay.created_at).getTime()) / DAY);
+  return tg.send(chatId, [
+    '💳 <b>To\'lovni qaytarish</b>',
+    '',
+    `👤 Foydalanuvchi: <code>${userId}</code>`,
+    `⭐ To'lov: <b>${pay.amount} ⭐</b> (${planName(pay, env)}), ${dateUz(fromSql(pay.created_at))}`,
+    `⏱ To'lovga <b>${days} kun</b> bo'lgan`,
+    '',
+    'Qaytarilsa: yulduzlar qaytadi, obuna to\'xtaydi, premium o\'chadi.',
+  ].join('\n'), {
+    reply_markup: { inline_keyboard: [[
+      { text: '✅ Qaytarish', callback_data: `rf_ok:${userId}` },
+      { text: '❌ Bekor qilish', callback_data: 'rf_no' },
+    ]] },
+  });
+}
+
+async function refundConfirm(tg, env, cq) {
+  const userId = Number(cq.data.split(':')[1]);
+  const chatId = cq.message.chat.id;
+  const messageId = cq.message.message_id;
+  const pay = await lastPayment(env, userId);
+  if (!pay) {
+    await tg.answerCallback(cq.id);
+    return tg.edit(chatId, messageId, `⚠️ <code>${userId}</code> uchun qaytariladigan to'lov topilmadi (balki allaqachon qaytarilgan).`);
+  }
+  // Oylik obuna bo'lsa, keyingi oylarda avtomatik yechilishini to'xtatamiz
+  if (planName(pay, env) === 'oylik') {
+    try {
+      await tg.call('editUserStarSubscription', { user_id: userId, telegram_payment_charge_id: pay.charge_id, is_canceled: true });
+    } catch (e) { console.error('Obunani to\'xtatib bo\'lmadi', e.message); }
+  }
+  try {
+    await tg.call('refundStarPayment', { user_id: userId, telegram_payment_charge_id: pay.charge_id });
+  } catch (e) {
+    await tg.answerCallback(cq.id, '❌ Xato');
+    return tg.edit(chatId, messageId, `❌ <b>Qaytarib bo'lmadi:</b> ${esc(e.description || e.message)}`);
+  }
+  await env.DB.batch([
+    env.DB.prepare('UPDATE payments SET refunded = 1 WHERE charge_id = ?').bind(pay.charge_id),
+    env.DB.prepare('DELETE FROM premium WHERE chat_id = ?').bind(userId),
+  ]);
+  await tg.send(userId, [
+    '💳 <b>To\'lovingiz qaytarildi</b>',
+    '',
+    `⭐ ${pay.amount} ⭐ hisobingizga qaytdi.`,
+    'Premium o\'chirildi.',
+  ].join('\n')).catch(() => {});
+  await tg.answerCallback(cq.id, '✅ Qaytarildi');
+  return tg.edit(chatId, messageId, `✅ <b>${pay.amount} ⭐ qaytarildi</b> (<code>${userId}</code>). Obuna to'xtatildi, premium o'chirildi.`);
+}
+
 // ---------- Statistika ----------
 async function trackChat(env, chat) {
   if (!chat) return;
@@ -461,7 +552,7 @@ async function statsText(env) {
     (SELECT COUNT(*) FROM subscribers WHERE chat_id > 0) AS subs,
     (SELECT COUNT(*) FROM subscribers WHERE chat_id < 0) AS group_subs,
     (SELECT COUNT(*) FROM premium WHERE until > datetime('now')) AS premium,
-    (SELECT COALESCE(SUM(amount), 0) FROM payments) AS stars`).first();
+    (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE refunded = 0) AS stars`).first();
   const n = (x) => money(Number(x) || 0, 0);
   return [
     `📊 <b>${boldSans('Bot statistikasi')}</b>`,
@@ -539,6 +630,7 @@ async function handleMessage(tg, env, msg) {
   await trackChat(env, msg.chat);
 
   if (msg.successful_payment) return handlePayment(tg, env, msg);
+  if (msg.refunded_payment) return; // Telegram'ning "to'lov qaytarildi" xizmat xabari
   if (cmd === '/paysupport') {
     return tg.send(chatId, [
       '💳 <b>To\'lov bo\'yicha yordam</b>',
@@ -556,6 +648,8 @@ async function handleMessage(tg, env, msg) {
   }
 
   if (isGroup) return handleGroupMessage(tg, env, msg, cmd, args);
+
+  if (cmd === '/refund' && isAdmin(env, msg.from?.id)) return refundCommand(tg, env, chatId, args);
 
   if (text === BTN.PREMIUM) return sendPremiumInfo(tg, env, chatId, msg.from?.id);
   if (text === BTN.ADD_GROUP || text === OLD_ADD_GROUP) {
@@ -691,6 +785,14 @@ async function handleCallback(tg, env, cq) {
   if (cq.data === 'convert_help') {
     await tg.answerCallback(cq.id);
     return tg.send(chatId, convertHelpText(), { reply_markup: convertKeyboard(await getConvertCurrency(env, chatId)) });
+  }
+  if (cq.data?.startsWith('rf_')) {
+    if (!isAdmin(env, cq.from?.id)) return tg.answerCallback(cq.id);
+    if (cq.data === 'rf_no') {
+      await tg.answerCallback(cq.id);
+      return tg.edit(chatId, messageId, '❌ Qaytarish bekor qilindi.');
+    }
+    return refundConfirm(tg, env, cq);
   }
   if (cq.data === 'premium_list') {
     await tg.answerCallback(cq.id);
