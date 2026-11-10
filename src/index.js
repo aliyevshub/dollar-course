@@ -4,7 +4,7 @@
 //  /setup    — webhook, buyruqlar va bot tavsifini bir marta o'rnatish
 //  cron      — har kuni ertalab obunachilarga kursni yuborish
 import { Telegram } from './telegram.js';
-import { getRates, getRatesOn, parseCbuDate, CURRENCIES, PREMIUM_CURRENCIES, ALL_CURRENCIES, isPremiumCurrency, TOP_RATES, TOP_PREMIUM } from './cbu.js';
+import { getRates, getRatesOn, parseCbuDate, CURRENCIES, PREMIUM_CURRENCIES, ALL_CURRENCIES, isPremiumCurrency, TOP_PREMIUM } from './cbu.js';
 
 const PREMIUM_COUNT = Object.keys(PREMIUM_CURRENCIES).length; // 28
 import { parseConvert } from './convert.js';
@@ -96,12 +96,13 @@ const RATES_INLINE = {
 
 // Premium bo'lmaganlarga kurs ostida "⭐ Boshqa valyutalar" ham chiqadi
 function ratesInline(premium) {
-  if (premium) return { inline_keyboard: [...RATES_INLINE.inline_keyboard, [{ text: '📋 Barcha kurslar', callback_data: 'rates_all' }]] };
+  if (premium) return RATES_INLINE; // premium kurslar "⭐ Premium tarif" bo'limida
   return { inline_keyboard: [...RATES_INLINE.inline_keyboard, [{ text: '⭐ Boshqa valyutalar', callback_data: 'premium_info' }]] };
 }
 
-// Premium foydalanuvchiga qisqa ko'rinishda eng mashhur 8 tasi, "Barcha kurslar"da hammasi
-const ratesCodes = (premium, all = false) => (premium ? (all ? Object.keys(ALL_CURRENCIES) : TOP_RATES) : Object.keys(CURRENCIES));
+// Bugungi kurs va ertalabki xabarda hamma uchun faqat USD, EUR, RUB.
+// Premium valyutalar kurslari "⭐ Premium tarif" bo'limida.
+const ratesCodes = () => Object.keys(CURRENCIES);
 
 // Bir cron ishga tushishida nechta obunachiga yuboriladi.
 // Bepul tarifda bitta ishga tushishda 50 ta tashqi so'rov limiti bor, shuning uchun 40.
@@ -337,17 +338,29 @@ function invoiceLink(tg, env, plan) {
   });
 }
 
+function premiumRatesText(rates, until) {
+  return [
+    `⭐ <b>${boldSans('Premium kurslar')}</b>`,
+    until.getUTCFullYear() >= 2099 ? '✅ Premium faol (admin, cheksiz)' : `✅ Premium faol: <b>${dateUz(until)}</b> gacha`,
+    '',
+    ratesTable(rates, Object.keys(PREMIUM_CURRENCIES)),
+    '',
+    `<blockquote>🏦 Manba: O'zbekiston Markaziy banki\n🕐 Yangilandi: ${tashkentTime()}</blockquote>`,
+  ].join('\n');
+}
+
 async function sendPremiumInfo(tg, env, chatId, userId) {
   const until = await premiumUntil(env, userId);
   const listBtn = [{ text: '📋 To\'liq ro\'yxat', callback_data: 'premium_list' }];
-  if (until && until.getUTCFullYear() >= 2099) {
-    return tg.send(chatId, premiumText(env, until), { reply_markup: { inline_keyboard: [listBtn] } });
-  }
   if (until) {
-    const yLink = await invoiceLink(tg, env, 'year');
-    return tg.send(chatId, premiumText(env, until), {
-      reply_markup: { inline_keyboard: [listBtn, [{ text: `🗓 Yillikka uzaytirish: ${yearPrice(env)} ⭐`, url: yLink }]] },
-    });
+    const rows = [[
+      { text: '🔄 Yangilash', callback_data: 'refresh_premium' },
+      { text: '🔄 Konvertatsiya', callback_data: 'conv_more' },
+    ]];
+    if (until.getUTCFullYear() < 2099) {
+      rows.push([{ text: `🗓 Yillikka uzaytirish: ${yearPrice(env)} ⭐`, url: await invoiceLink(tg, env, 'year') }]);
+    }
+    return tg.send(chatId, premiumRatesText(await getRates(), until), { reply_markup: { inline_keyboard: rows } });
   }
   const [mLink, yLink] = await Promise.all([invoiceLink(tg, env, 'month'), invoiceLink(tg, env, 'year')]);
   return tg.send(chatId, premiumText(env, null), {
@@ -683,10 +696,23 @@ async function handleCallback(tg, env, cq) {
     await tg.answerCallback(cq.id);
     return tg.send(chatId, fullListText());
   }
-  if (cq.data === 'rates_all') {
+  if (cq.data === 'rates_all') { // eski xabarlardagi tugma uchun
     await tg.answerCallback(cq.id);
-    if (!premium) return sendPremiumInfo(tg, env, chatId, cq.from?.id);
-    return tg.send(chatId, await ratesText(await getRates(), true, true), { reply_markup: RATES_INLINE });
+    return sendPremiumInfo(tg, env, chatId, cq.from?.id);
+  }
+  if (cq.data === 'refresh_premium') {
+    const until = await premiumUntil(env, cq.from?.id);
+    if (!until) {
+      await tg.answerCallback(cq.id);
+      return sendPremiumInfo(tg, env, chatId, cq.from?.id);
+    }
+    try {
+      await tg.edit(chatId, messageId, premiumRatesText(await getRates(), until), { reply_markup: cq.message.reply_markup });
+      return tg.answerCallback(cq.id, '✅ Kurs yangilandi');
+    } catch (e) {
+      if (String(e.description).includes('not modified')) return tg.answerCallback(cq.id, 'Kurs o\'zgarmagan');
+      throw e;
+    }
   }
   if (cq.data === 'premium_info') {
     await tg.answerCallback(cq.id);
@@ -810,7 +836,7 @@ async function setup(request, env) {
     ].join('\n'),
   });
   await tg.call('setMyShortDescription', {
-    short_description: '💵 CBU rasmiy kurslari, konvertatsiya va kunlik xabar',
+    short_description: '💵 CBU rasmiy kurslari, konvertatsiya va kunlik xabar\n👨‍💻 Developer: @Aliyevvv_a',
   });
 
   const me = await tg.call('getMe');
