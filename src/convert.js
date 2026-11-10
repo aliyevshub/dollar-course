@@ -1,15 +1,17 @@
 // Foydalanuvchi yozgan matndan konvertatsiya so'rovini ajratib olish
 // Misollar: "100 usd", "100$", "$100", "50 eur", "1000 rub", "500000 so'm", "1 000 000 sum", "100"
 
+// Odamlar ko'p yozadigan xato va qisqa variantlar ham bor ("dolar", "долар", "rubel"...)
 const ALIASES = {
-  USD: ['usd', '$', 'dollar', 'dollor', 'доллар', 'долл'],
-  EUR: ['eur', '€', 'euro', 'evro', 'yevro', 'евро'],
-  RUB: ['rub', '₽', 'rubl', 'rubl\'', 'рубль', 'руб'],
-  UZS: ['uzs', 'som', 'so\'m', 'so‘m', 'soʻm', 'sum', 'сум', 'сўм', 'so`m'],
+  USD: ['usd', '$', 'dollar', 'dolar', 'dollor', 'dolor', 'dollr', 'dlr', 'доллар', 'долар', 'долл', 'дол', 'бакс'],
+  EUR: ['eur', '€', 'euro', 'evro', 'yevro', 'ewro', 'евро', 'эвро', 'евр'],
+  RUB: ['rub', '₽', 'rubl', 'rubel', 'ruble', 'рубль', 'рубл', 'руб'],
+  UZS: ['uzs', 'som', 'so\'m', 'sum', 'сум', 'сўм', 'сом'],
 };
 
 function findCurrency(word) {
-  const w = word.toLowerCase().trim();
+  // Telefonlardagi turli apostroflarni (’ ‘ ʻ ʼ `) bitta ' ga keltiramiz
+  const w = word.toLowerCase().trim().replace(/[’‘ʻʼ`]/g, "'").replace(/[.!?,]+$/, '');
   if (!w) return null;
   for (const [code, list] of Object.entries(ALIASES)) {
     if (list.some((a) => w === a || (a.length > 2 && w.startsWith(a)))) return code;

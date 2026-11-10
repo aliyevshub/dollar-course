@@ -28,6 +28,14 @@ const MAIN_MENU = {
   is_persistent: true,
 };
 
+// Xabarning o'zi ostida chiqadigan tugmalar
+const MENU_INLINE = {
+  inline_keyboard: [
+    [{ text: BTN.RATES, callback_data: 'menu_rates' }, { text: BTN.CONVERT, callback_data: 'convert_help' }],
+    [{ text: BTN.SUBSCRIBE, callback_data: 'menu_sub' }, { text: BTN.HELP, callback_data: 'menu_help' }],
+  ],
+};
+
 const RATES_INLINE = {
   inline_keyboard: [[
     { text: '🔄 Yangilash', callback_data: 'refresh' },
@@ -56,7 +64,7 @@ function welcomeText(firstName) {
     '',
     '<blockquote>📅 Kurslar har kuni avtomatik yangilanadi</blockquote>',
     '',
-    '👇 <i>Quyidagi tugmalardan birini tanlang:</i>',
+    '👇 <i>Pastdagi tugmalardan birini tanlang:</i>',
   ].join('\n');
 }
 
@@ -206,10 +214,10 @@ async function handleMessage(tg, env, msg) {
     '',
     'Konvertatsiya uchun summa va valyutani yozing, masalan: <code>100 usd</code>',
     'Yoki quyidagi tugmalardan birini tanlang 👇',
-  ].join('\n'), { reply_markup: MAIN_MENU });
+  ].join('\n'), { reply_markup: MENU_INLINE });
 }
 
-async function handleCallback(tg, cq) {
+async function handleCallback(tg, env, cq) {
   const chatId = cq.message?.chat.id;
   const messageId = cq.message?.message_id;
 
@@ -225,6 +233,18 @@ async function handleCallback(tg, cq) {
   if (cq.data === 'convert_help') {
     await tg.answerCallback(cq.id);
     return tg.send(chatId, convertHelpText(), { reply_markup: MAIN_MENU });
+  }
+  if (cq.data === 'menu_rates') {
+    await tg.answerCallback(cq.id);
+    return tg.send(chatId, await ratesText(await getRates()), { reply_markup: RATES_INLINE });
+  }
+  if (cq.data === 'menu_sub') {
+    await tg.answerCallback(cq.id);
+    return tg.send(chatId, await toggleSubscription(env, chatId, cq.from?.first_name), { reply_markup: MAIN_MENU });
+  }
+  if (cq.data === 'menu_help') {
+    await tg.answerCallback(cq.id);
+    return tg.send(chatId, helpText(), { reply_markup: MAIN_MENU });
   }
   return tg.answerCallback(cq.id);
 }
@@ -353,7 +373,7 @@ export default {
       const tg = new Telegram(env.BOT_TOKEN, env.TELEGRAM_API);
       try {
         if (update.message) await handleMessage(tg, env, update.message);
-        else if (update.callback_query) await handleCallback(tg, update.callback_query);
+        else if (update.callback_query) await handleCallback(tg, env, update.callback_query);
       } catch (e) {
         console.error('Xabarni qayta ishlashda xato', e.message);
         const chatId = update.message?.chat.id;
@@ -364,7 +384,7 @@ export default {
       return new Response('ok'); // Telegram har doim 200 javob kutadi
     }
 
-    return new Response('💵 Valyuta Kursi Boti ishlayapti', {
+    return new Response('💵 Dollar Kursi boti ishlayapti', {
       headers: { 'content-type': 'text/plain; charset=utf-8' },
     });
   },

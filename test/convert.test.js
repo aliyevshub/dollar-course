@@ -13,6 +13,14 @@ test('konvertatsiya matnini tushunadi', () => {
   assert.deepEqual(parseConvert('500000 sum'), { amount: 500000, from: 'UZS' });
   assert.deepEqual(parseConvert('12,5 dollar'), { amount: 12.5, from: 'USD' });
   assert.deepEqual(parseConvert('100'), { amount: 100, from: 'USD' });
+  assert.deepEqual(parseConvert('12dolar'), { amount: 12, from: 'USD' });
+  assert.deepEqual(parseConvert('12 dolar'), { amount: 12, from: 'USD' });
+  assert.deepEqual(parseConvert('50 долар'), { amount: 50, from: 'USD' });
+  assert.deepEqual(parseConvert('200 Dollar.'), { amount: 200, from: 'USD' });
+  assert.deepEqual(parseConvert('100000 so’m'), { amount: 100000, from: 'UZS' });
+  assert.deepEqual(parseConvert('100000 soʻm'), { amount: 100000, from: 'UZS' });
+  assert.deepEqual(parseConvert('500 rubel'), { amount: 500, from: 'RUB' });
+  assert.deepEqual(parseConvert('30 evro'), { amount: 30, from: 'EUR' });
   assert.equal(parseConvert('salom'), null);
   assert.equal(parseConvert('2 marta'), null);
   assert.equal(parseConvert('0 usd'), null);
