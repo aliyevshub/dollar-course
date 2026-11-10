@@ -17,12 +17,14 @@ const BTN = {
   CONVERT: '🔄 Konvertatsiya',
   SUBSCRIBE: '🔔 Kunlik obuna',
   HELP: 'ℹ️ Yordam',
+  ADD_GROUP: '➕ Guruhga qo\'shish',
 };
 
 const MAIN_MENU = {
   keyboard: [
     [{ text: BTN.RATES }, { text: BTN.CONVERT }],
     [{ text: BTN.SUBSCRIBE }, { text: BTN.HELP }],
+    [{ text: BTN.ADD_GROUP }],
   ],
   resize_keyboard: true,
   is_persistent: true,
@@ -47,6 +49,11 @@ const MENU_INLINE = {
     [{ text: BTN.RATES, callback_data: 'menu_rates' }, { text: BTN.CONVERT, callback_data: 'convert_help' }],
     [{ text: BTN.SUBSCRIBE, callback_data: 'menu_sub' }, { text: BTN.HELP, callback_data: 'menu_help' }],
   ],
+};
+
+// Guruhda kurs xabari ostida faqat "Yangilash" (guruhda bot oddiy matnni o'qimaydi)
+const RATES_INLINE_GROUP = {
+  inline_keyboard: [[{ text: '🔄 Yangilash', callback_data: 'refresh' }]],
 };
 
 const RATES_INLINE = {
@@ -85,26 +92,39 @@ function helpText() {
   return [
     `ℹ️ <b>${boldSans('Yordam')}</b>`,
     '',
-    '📌 <b>Tugmalar</b>',
-    '💵 <b>Bugungi kurs</b>: Markaziy bankning bugungi kurslari',
-    '🔄 <b>Konvertatsiya</b>: summani boshqa valyutaga o\'girish',
-    '🔔 <b>Kunlik obuna</b>: har kuni ertalab kursni olish (yoqish yoki o\'chirish)',
+    '<b>Tugmalar:</b>',
+    '💵 <b>Bugungi kurs</b>: CBU rasmiy kurslari',
+    '🔄 <b>Konvertatsiya</b>: summani hisoblash',
+    '🔔 <b>Kunlik obuna</b>: yoqish yoki o\'chirish',
     '',
-    '🔄 <b>Konvertatsiya qanday ishlaydi?</b>',
-    '1️⃣ <b>Konvertatsiya</b> tugmasini bosing',
-    '2️⃣ Valyutani tanlang: dollar, yevro, rubl yoki so\'m',
-    '3️⃣ Summani yozing, masalan: <code>100</code>',
-    '',
-    '💡 <b>Tezroq usul:</b> summa va valyutani birga yozing:',
-    '<code>100 dollar</code> · <code>50 yevro</code> · <code>1000 rubl</code> · <code>500000 so\'m</code>',
-    '',
-    '⌨️ <b>Buyruqlar</b>',
+    '<b>Buyruqlar:</b>',
     '/kurs: bugungi kurs',
     '/konvert: konvertatsiya',
-    '/obuna: kunlik obuna',
-    '/yordam: yordam',
+    '/obuna: kunlik obunani yoqish yoki o\'chirish',
+    '/yordam: shu xabar',
+    '',
+    '<b>Konvertatsiya:</b> summa va valyutani yozing',
+    '<code>100 dollar</code> · <code>100 yevro</code> · <code>100 rubl</code> · <code>100 000 so\'m</code>',
+    '',
+    '👥 <b>Guruhda ham ishlayman:</b> meni guruhga qo\'shing va <code>/kurs</code> yozing.',
     '',
     '<blockquote>🏦 Manba: O\'zbekiston Markaziy banki (cbu.uz)</blockquote>',
+  ].join('\n');
+}
+
+// Guruhga qo'shilganda va guruhda /start yoki /yordam yozilganda
+function groupHelpText() {
+  return [
+    `👋 <b>Salom! Men ${boldSans('Dollar Kursi')} botiman.</b>`,
+    '',
+    'Guruhda quyidagi buyruqlar ishlaydi:',
+    '',
+    '💵 /kurs: bugungi kurs',
+    '🔄 <code>/k 100 dollar</code>: konvertatsiya',
+    '🔔 /obuna: har kuni 8:00 da kurs guruhga (faqat adminlar)',
+    'ℹ️ /yordam: shu xabar',
+    '',
+    '<blockquote>🏦 Manba: O\'zbekiston Markaziy banki</blockquote>',
   ].join('\n');
 }
 
@@ -169,7 +189,7 @@ function morningText(rates, weekDiff) {
   ].filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n');
 }
 
-function convertText(rates, { amount, from }) {
+function convertText(rates, { amount, from }, inGroup = false) {
   const lines = [`🔄 <b>${boldSans('Konvertatsiya')}</b>`, ''];
   if (from === 'UZS') {
     lines.push(`🇺🇿 <b>${smartMoney(amount)} so'm</b> =`, '');
@@ -182,18 +202,66 @@ function convertText(rates, { amount, from }) {
     lines.push(`${CURRENCIES[from].flag} <b>${smartMoney(amount)} ${from}</b> = 🇺🇿 <b>${smartMoney(amount * r.rate)} so'm</b>`);
     lines.push('', `<i>Kurs: 1 ${from} = ${money(r.rate)} so'm</i>`);
   }
-  lines.push('', '✏️ <i>Yana summa yozing yoki valyutani almashtiring</i> 👇');
+  if (!inGroup) lines.push('', '✏️ <i>Yana summa yozing yoki valyutani almashtiring</i> 👇');
   return lines.join('\n');
 }
 
 // ---------- Konvertatsiya uchun tanlangan valyuta (D1) ----------
-let stateTableReady = false;
+// Kerakli jadvallar kod tomonidan avtomatik yaratiladi (D1 Console'da hech narsa qilish shart emas)
+let tablesReady = false;
 async function ensureStateTable(env) {
-  if (stateTableReady) return;
+  if (tablesReady) return;
+  await env.DB.batch([
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS convert_state (chat_id INTEGER PRIMARY KEY, currency TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'),
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS users (chat_id INTEGER PRIMARY KEY, type TEXT NOT NULL, name TEXT, created_at TEXT NOT NULL DEFAULT (datetime(\'now\')), last_seen TEXT NOT NULL DEFAULT (datetime(\'now\')))'),
+    // Statistika qo'shilishidan oldingi obunachilarni ham hisobga olamiz
+    env.DB.prepare('INSERT OR IGNORE INTO users (chat_id, type, name, created_at, last_seen) SELECT chat_id, CASE WHEN chat_id < 0 THEN \'group\' ELSE \'private\' END, first_name, created_at, created_at FROM subscribers'),
+  ]);
+  tablesReady = true;
+}
+
+// ---------- Statistika ----------
+async function trackChat(env, chat) {
+  if (!chat) return;
+  await ensureStateTable(env);
+  const name = chat.title || chat.first_name || null;
   await env.DB.prepare(
-    'CREATE TABLE IF NOT EXISTS convert_state (chat_id INTEGER PRIMARY KEY, currency TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'
-  ).run();
-  stateTableReady = true;
+    'INSERT INTO users (chat_id, type, name) VALUES (?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET last_seen = datetime(\'now\'), name = excluded.name'
+  ).bind(chat.id, chat.type === 'private' ? 'private' : 'group', name).run();
+}
+
+function isAdmin(env, userId) {
+  return !!env.ADMIN_ID && String(userId) === String(env.ADMIN_ID).trim();
+}
+
+async function statsText(env) {
+  await ensureStateTable(env);
+  const r = await env.DB.prepare(`SELECT
+    (SELECT COUNT(*) FROM users WHERE type = 'private') AS total,
+    (SELECT COUNT(*) FROM users WHERE type = 'private' AND date(created_at, '+5 hours') = date('now', '+5 hours')) AS today,
+    (SELECT COUNT(*) FROM users WHERE type = 'private' AND last_seen >= datetime('now', '-7 days')) AS active7,
+    (SELECT COUNT(*) FROM users WHERE type = 'group') AS groups,
+    (SELECT COUNT(*) FROM subscribers WHERE chat_id > 0) AS subs,
+    (SELECT COUNT(*) FROM subscribers WHERE chat_id < 0) AS group_subs`).first();
+  const n = (x) => money(Number(x) || 0, 0);
+  return [
+    `📊 <b>${boldSans('Bot statistikasi')}</b>`,
+    '',
+    `👥 Jami foydalanuvchilar: <b>${n(r.total)}</b>`,
+    `🆕 Bugun qo'shilganlar: <b>${n(r.today)}</b>`,
+    `🔥 Oxirgi 7 kunda faol: <b>${n(r.active7)}</b>`,
+    `🔔 Kunlik obunachilar: <b>${n(r.subs)}</b>`,
+    `👨‍👩‍👧 Guruhlar: <b>${n(r.groups)}</b> (obuna bo'lgan: ${n(r.group_subs)})`,
+    '',
+    `<i>🕐 ${tashkentTime()} holatiga</i>`,
+  ].join('\n');
+}
+
+// Botning username'i (guruhga qo'shish havolasi va guruh buyruqlari uchun)
+let botUsernameCache = null;
+async function botUsername(tg) {
+  if (!botUsernameCache) botUsernameCache = (await tg.call('getMe')).username;
+  return botUsernameCache;
 }
 
 async function getConvertCurrency(env, chatId) {
@@ -214,32 +282,62 @@ function todayTashkent() {
   return new Date(Date.now() + 5 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-async function toggleSubscription(env, chatId, firstName) {
+async function toggleSubscription(env, chatId, firstName, inGroup = false) {
   const existing = await env.DB.prepare('SELECT chat_id FROM subscribers WHERE chat_id = ?').bind(chatId).first();
   if (existing) {
     await env.DB.prepare('DELETE FROM subscribers WHERE chat_id = ?').bind(chatId).run();
     return [
       '🔕 <b>Kunlik obuna bekor qilindi.</b>',
       '',
-      'Qayta yoqish uchun <b>🔔 Kunlik obuna</b> tugmasini bosing.',
+      inGroup ? 'Qayta yoqish uchun /obuna yozing.' : 'Qayta yoqish uchun <b>🔔 Kunlik obuna</b> tugmasini bosing.',
     ].join('\n');
   }
   await env.DB.prepare('INSERT INTO subscribers (chat_id, first_name, last_sent) VALUES (?, ?, ?)')
     .bind(chatId, firstName || null, todayTashkent()).run();
   return [
-    '✅ <b>Ajoyib!</b> Siz kunlik obunaga yozildingiz.',
+    inGroup ? '✅ <b>Ajoyib!</b> Guruh kunlik obunaga yozildi.' : '✅ <b>Ajoyib!</b> Siz kunlik obunaga yozildingiz.',
     '',
-    '⏰ Har kuni soat <b>8:00</b> da kursni o\'zim yuboraman.',
-    '🔕 Bekor qilish uchun tugmani yana bosing.',
+    `⏰ Har kuni soat <b>8:00</b> da kursni ${inGroup ? 'guruhga' : 'o\'zim'} yuboraman.`,
+    inGroup ? '🔕 Bekor qilish uchun /obuna ni yana yozing.' : '🔕 Bekor qilish uchun tugmani yana bosing.',
   ].join('\n');
 }
 
 // ---------- Kiruvchi xabarlarni qayta ishlash ----------
 async function handleMessage(tg, env, msg) {
   const chatId = msg.chat.id;
+  const isGroup = msg.chat.type === 'group' || msg.chat.type === 'supergroup';
   const text = (msg.text || '').trim();
   const firstName = msg.from?.first_name;
-  const cmd = text.startsWith('/') ? text.split(/[\s@]/)[0].toLowerCase() : null;
+  // "/k@bot_nomi 100 dollar" -> cmd = "/k", args = "100 dollar"
+  const m = text.match(/^\/([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9_]+))?(?:\s+([\s\S]*))?$/);
+  const cmd = m ? '/' + m[1].toLowerCase() : null;
+  const args = m?.[3]?.trim() || '';
+
+  // Buyruq boshqa botga yozilgan bo'lsa (masalan /kurs@boshqa_bot), e'tibor bermaymiz
+  if (m?.[2] && m[2].toLowerCase() !== (await botUsername(tg)).toLowerCase()) return;
+
+  await trackChat(env, msg.chat);
+
+  if (cmd === '/id') {
+    return tg.send(chatId, `🆔 Sizning Telegram ID'ingiz: <code>${msg.from?.id}</code>`);
+  }
+  if (cmd === '/stat' && isAdmin(env, msg.from?.id)) {
+    return tg.send(chatId, await statsText(env));
+  }
+
+  if (isGroup) return handleGroupMessage(tg, env, msg, cmd, args);
+
+  if (text === BTN.ADD_GROUP) {
+    const username = await botUsername(tg);
+    return tg.send(chatId, [
+      '👥 <b>Botni guruhga qo\'shing!</b>',
+      '',
+      'Pastdagi tugmani bosing va guruhni tanlang.',
+      'Guruhda <code>/kurs</code> yozilsa, hammaga bugungi kursni ko\'rsataman.',
+    ].join('\n'), {
+      reply_markup: { inline_keyboard: [[{ text: '➕ Guruhni tanlash', url: `https://t.me/${username}?startgroup=true` }]] },
+    });
+  }
 
   if (cmd === '/start') {
     return tg.send(chatId, welcomeText(firstName), { reply_markup: MAIN_MENU });
@@ -253,11 +351,11 @@ async function handleMessage(tg, env, msg) {
   if (cmd === '/obuna' || text === BTN.SUBSCRIBE) {
     return tg.send(chatId, await toggleSubscription(env, chatId, firstName), { reply_markup: MAIN_MENU });
   }
-  if (cmd === '/konvert' || text === BTN.CONVERT) {
+  if ((cmd === '/konvert' || cmd === '/k') && !args || text === BTN.CONVERT) {
     return tg.send(chatId, convertHelpText(), { reply_markup: convertKeyboard(await getConvertCurrency(env, chatId)) });
   }
 
-  const req = text ? parseConvert(text) : null;
+  const req = (cmd === '/konvert' || cmd === '/k') ? parseConvert(args) : (text && !cmd ? parseConvert(text) : null);
   if (req) {
     if (req.from) {
       await setConvertCurrency(env, chatId, req.from); // "50 eur" yozsa, keyingi sonlar ham yevroda hisoblanadi
@@ -275,6 +373,55 @@ async function handleMessage(tg, env, msg) {
   ].join('\n'), { reply_markup: MENU_INLINE });
 }
 
+// ---------- Guruhlar ----------
+// Guruhda bot faqat buyruqlarga javob beradi va hech qachon "tushunmadim" deb yozmaydi
+async function handleGroupMessage(tg, env, msg, cmd, args) {
+  const chatId = msg.chat.id;
+  const reply = { reply_parameters: { message_id: msg.message_id, allow_sending_without_reply: true } };
+
+  // Bot guruhga qo'shilganda salomlashadi
+  if (msg.new_chat_members?.length) {
+    const me = (await botUsername(tg)).toLowerCase();
+    if (msg.new_chat_members.some((u) => u.username?.toLowerCase() === me)) {
+      return tg.send(chatId, groupHelpText());
+    }
+    return;
+  }
+  if (!cmd) return;
+
+  if (cmd === '/start' || cmd === '/yordam' || cmd === '/help') {
+    return tg.send(chatId, groupHelpText(), reply);
+  }
+  if (cmd === '/kurs') {
+    return tg.send(chatId, await ratesText(await getRates()), { ...reply, reply_markup: RATES_INLINE_GROUP });
+  }
+  if (cmd === '/k' || cmd === '/konvert') {
+    const req = args ? parseConvert(args) : null;
+    if (!req) {
+      return tg.send(chatId, '✏️ Summa va valyutani yozing, masalan: <code>/k 100 dollar</code>', reply);
+    }
+    req.from = req.from || 'USD';
+    return tg.send(chatId, convertText(await getRates(), req, true), reply);
+  }
+  if (cmd === '/obuna') {
+    if (!(await isGroupAdmin(tg, msg))) {
+      return tg.send(chatId, '🔒 Guruh uchun kunlik obunani faqat <b>adminlar</b> yoqishi yoki o\'chirishi mumkin.', reply);
+    }
+    return tg.send(chatId, await toggleSubscription(env, chatId, msg.chat.title, true), reply);
+  }
+}
+
+async function isGroupAdmin(tg, msg) {
+  if (msg.sender_chat?.id === msg.chat.id) return true; // anonim admin
+  if (!msg.from) return false;
+  try {
+    const member = await tg.call('getChatMember', { chat_id: msg.chat.id, user_id: msg.from.id });
+    return member.status === 'creator' || member.status === 'administrator';
+  } catch {
+    return false;
+  }
+}
+
 // Tushunarsiz xabarga, turiga qarab, birinchi qator
 function unknownIntro(msg) {
   if (msg.sticker) return '😊 <b>Stiker yoqdi!</b> Lekin men faqat valyuta kursi bilan ishlayman.';
@@ -288,10 +435,12 @@ function unknownIntro(msg) {
 async function handleCallback(tg, env, cq) {
   const chatId = cq.message?.chat.id;
   const messageId = cq.message?.message_id;
+  const inGroup = cq.message?.chat.type !== 'private';
+  await trackChat(env, cq.message?.chat);
 
   if (cq.data === 'refresh') {
     try {
-      await tg.edit(chatId, messageId, await ratesText(await getRates()), { reply_markup: RATES_INLINE });
+      await tg.edit(chatId, messageId, await ratesText(await getRates()), { reply_markup: inGroup ? RATES_INLINE_GROUP : RATES_INLINE });
       return tg.answerCallback(cq.id, '✅ Kurs yangilandi');
     } catch (e) {
       if (String(e.description).includes('not modified')) return tg.answerCallback(cq.id, 'Kurs o\'zgarmagan');
@@ -377,6 +526,15 @@ async function setup(request, env) {
       { command: 'kurs', description: 'Bugungi kurs' },
       { command: 'konvert', description: 'Konvertatsiya' },
       { command: 'obuna', description: 'Kunlik obuna' },
+      { command: 'yordam', description: 'Yordam' },
+    ],
+  });
+  await tg.call('setMyCommands', {
+    scope: { type: 'all_group_chats' },
+    commands: [
+      { command: 'kurs', description: 'Bugungi kurs' },
+      { command: 'k', description: 'Konvertatsiya: /k 100 dollar' },
+      { command: 'obuna', description: 'Guruhga kunlik kurs (adminlar)' },
       { command: 'yordam', description: 'Yordam' },
     ],
   });
