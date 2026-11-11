@@ -254,6 +254,7 @@ let tablesReady = false;
 async function ensureStateTable(env) {
   if (tablesReady) return;
   await env.DB.batch([
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS subscribers (chat_id INTEGER PRIMARY KEY, first_name TEXT, last_sent TEXT, created_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS convert_state (chat_id INTEGER PRIMARY KEY, currency TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS premium (chat_id INTEGER PRIMARY KEY, until TEXT NOT NULL, charge_id TEXT, plan TEXT NOT NULL DEFAULT \'month\', reminded INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS payments (charge_id TEXT PRIMARY KEY, chat_id INTEGER NOT NULL, amount INTEGER NOT NULL, recurring INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'),
@@ -469,6 +470,10 @@ function cardChooseText(env) {
   ].join('\n');
 }
 
+const cardDigits = (env) => String(env.CARD_NUMBER).replace(/\D/g, '');
+// Karta raqamini 4 tadan guruhlab ko'rsatish: 8600 1111 2222 3333
+const cardPretty = (env) => cardDigits(env).replace(/(\d{4})(?=\d)/g, '$1 ');
+
 function cardInstructionText(env, plan) {
   return [
     '💳 <b>Karta orqali to\'lov</b>',
@@ -476,14 +481,28 @@ function cardInstructionText(env, plan) {
     `📅 Tarif: <b>${cardPlanName(plan)}</b>`,
     `💰 Summa: <b>${som(cardPrice(env, plan))}</b>`,
     '',
-    `💳 Karta: <code>${esc(String(env.CARD_NUMBER).trim())}</code>`,
-    env.CARD_OWNER ? `👤 Egasi: <b>${esc(String(env.CARD_OWNER).trim())}</b>` : '',
+    '━━━━━━━━━━━━━━━',
+    `💳  <b><code>${cardPretty(env)}</code></b>`,
+    env.CARD_OWNER ? `👤  <b>${esc(String(env.CARD_OWNER).trim())}</b>` : '',
+    '━━━━━━━━━━━━━━━',
     '',
-    `1️⃣ Shu kartaga <b>${som(cardPrice(env, plan))}</b> o'tkazing (Payme, Click yoki bank ilovasi orqali)`,
-    '2️⃣ To\'lov <b>chekini (skrinshot)</b> shu yerga yuboring 📸',
+    '1️⃣ <b>📋 Karta raqamini nusxalash</b> tugmasini bosing',
+    `2️⃣ Payme, Click yoki bank ilovasida kartaga <b>${som(cardPrice(env, plan))}</b> o'tkazing`,
+    '3️⃣ To\'lov <b>chekini (skrinshot)</b> shu yerga yuboring 📸',
     '',
     '<i>Chek tekshirilgach, premium yoqiladi va sizga xabar beraman.</i>',
-  ].filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n');
+  ].filter((l) => l !== null).filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n');
+}
+
+// Bir bosishda nusxalanadigan tugmalar (karta raqami va summa)
+function cardKeyboard(env, amount) {
+  return {
+    inline_keyboard: [
+      [{ text: '📋 Karta raqamini nusxalash', copy_text: { text: cardDigits(env) } }],
+      [{ text: `📋 Summani nusxalash: ${amount}`, copy_text: { text: String(amount) } }],
+      [{ text: '❌ Bekor qilish', callback_data: 'card_cancel' }],
+    ],
+  };
 }
 
 // Foydalanuvchi tarifni tanladi: chek kutilayotgan so'rov yaratiladi
@@ -494,9 +513,7 @@ async function startCardRequest(tg, env, chatId, from, plan) {
     env.DB.prepare('INSERT INTO card_requests (chat_id, name, plan, amount, status) VALUES (?, ?, ?, ?, \'waiting\')')
       .bind(chatId, [from?.first_name, from?.last_name].filter(Boolean).join(' ') + (from?.username ? ` (@${from.username})` : ''), plan, cardPrice(env, plan)),
   ]);
-  return tg.send(chatId, cardInstructionText(env, plan), {
-    reply_markup: { inline_keyboard: [[{ text: '❌ Bekor qilish', callback_data: 'card_cancel' }]] },
-  });
+  return tg.send(chatId, cardInstructionText(env, plan), { reply_markup: cardKeyboard(env, cardPrice(env, plan)) });
 }
 
 // Chek rasmi keldi. Kutilayotgan so'rov bo'lmasa false qaytaradi (oddiy rasm sifatida ishlanadi)
@@ -574,7 +591,8 @@ async function cardDecision(tg, env, cq) {
       `Sabab: <b>${reason}</b>`,
       '',
       `Iltimos, tekshirib, to'g'ri chekni qayta yuboring. Summa: <b>${som(req.amount)}</b>`,
-    ].join('\n'), { reply_markup: { inline_keyboard: [[{ text: '❌ Bekor qilish', callback_data: 'card_cancel' }]] } }).catch(() => {});
+      `💳 Karta: <b><code>${cardPretty(env)}</code></b>`,
+    ].join('\n'), { reply_markup: cardKeyboard(env, req.amount) }).catch(() => {});
     await tg.answerCallback(cq.id, 'Rad etildi');
     return tg.editCaption(chatId, messageId, `${baseCaption}\n\n❌ <b>Rad etildi:</b> ${reason}`);
   }
