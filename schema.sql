@@ -38,3 +38,18 @@ CREATE TABLE IF NOT EXISTS payments (
   refunded   INTEGER NOT NULL DEFAULT 0,    -- /refund bilan qaytarilgan
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Karta (Payme/Click) orqali to'lovlar: chek va admin tasdig'i (kod o'zi ham avtomatik yaratadi)
+CREATE TABLE IF NOT EXISTS card_requests (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id    INTEGER NOT NULL,
+  name       TEXT,
+  plan       TEXT NOT NULL,                 -- month | year
+  amount     INTEGER NOT NULL,              -- so'm
+  status     TEXT NOT NULL,                 -- waiting | pending | approved
+  file_id    TEXT,
+  file_kind  TEXT,                          -- photo | document
+  admin_msg  INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  decided_at TEXT
+);

@@ -42,6 +42,16 @@ export class Telegram {
     });
   }
 
+  // Chek rasmini (photo yoki rasm-fayl) adminga yuborish
+  sendFile(chatId, kind, fileId, caption, extra = {}) {
+    const method = kind === 'document' ? 'sendDocument' : 'sendPhoto';
+    return this.call(method, { chat_id: chatId, [kind === 'document' ? 'document' : 'photo']: fileId, caption, parse_mode: 'HTML', ...extra });
+  }
+
+  editCaption(chatId, messageId, caption, extra = {}) {
+    return this.call('editMessageCaption', { chat_id: chatId, message_id: messageId, caption, parse_mode: 'HTML', ...extra });
+  }
+
   answerCallback(id, text) {
     return this.call('answerCallbackQuery', { callback_query_id: id, text });
   }

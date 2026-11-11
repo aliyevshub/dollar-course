@@ -11,7 +11,7 @@ O'zbekiston Markaziy banki (CBU) rasmiy kurslarini ko'rsatadigan Telegram bot.
 | 🔄 Konvertatsiya | `100 usd`, `50 eur`, `1 000 000 so'm` deb yozish kifoya |
 | 🔔 Kunlik obuna · `/obuna` | Har kuni 8:00 da (Toshkent) kurs, haftalik o'zgarish bilan |
 | ℹ️ Yordam · `/yordam` | Barcha buyruqlar |
-| ⭐ Premium · `/premium` | 28 ta qo'shimcha valyuta; oylik 49 ⭐ (avtomatik obuna) yoki yillik 489 ⭐ (365 kun) |
+| ⭐ Premium · `/premium` | 28 ta qo'shimcha valyuta; Stars: oylik 49 ⭐ / yillik 489 ⭐; Payme/karta: 9 900 / 109 000 so'm (chek + admin tasdig'i) |
 | 👥 Guruhlarda | `/kurs`, `/k 100 dollar`, `/obuna` (adminlar) |
 | 📊 `/stat` | Statistika (faqat `ADMIN_ID`) |
 

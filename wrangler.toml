@@ -10,6 +10,9 @@ workers_dev = true
 ADMIN_ID = "1295718505"   # /stat va bepul Premium faqat shu Telegram ID uchun
 PREMIUM_PRICE = "49"        # Premium oylik narxi, Telegram Stars (30 kunlik avtomatik obuna)
 PREMIUM_YEAR_PRICE = "489"  # Premium yillik narxi, Telegram Stars (365 kun, bir martalik to'lov)
+CARD_PRICE_MONTH = "9900"     # Karta (Payme/Click) orqali oylik narx, so'm (30 kun)
+CARD_PRICE_YEAR = "109000"    # Karta orqali yillik narx, so'm (365 kun)
+# Karta raqami va egasi Cloudflare'da Secret: CARD_NUMBER, CARD_OWNER
 
 # Har kuni Toshkent vaqti bilan 8:00–8:59 oralig'ida har daqiqada (UTC 03:xx).
 # Har ishga tushishda bugun xabar olmagan obunachilarning bir guruhiga yuboriladi.

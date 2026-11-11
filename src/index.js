@@ -257,6 +257,7 @@ async function ensureStateTable(env) {
     env.DB.prepare('CREATE TABLE IF NOT EXISTS convert_state (chat_id INTEGER PRIMARY KEY, currency TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS premium (chat_id INTEGER PRIMARY KEY, until TEXT NOT NULL, charge_id TEXT, plan TEXT NOT NULL DEFAULT \'month\', reminded INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS payments (charge_id TEXT PRIMARY KEY, chat_id INTEGER NOT NULL, amount INTEGER NOT NULL, recurring INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'),
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS card_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, name TEXT, plan TEXT NOT NULL, amount INTEGER NOT NULL, status TEXT NOT NULL, file_id TEXT, file_kind TEXT, admin_msg INTEGER, created_at TEXT NOT NULL DEFAULT (datetime(\'now\')), decided_at TEXT)'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS users (chat_id INTEGER PRIMARY KEY, type TEXT NOT NULL, name TEXT, created_at TEXT NOT NULL DEFAULT (datetime(\'now\')), last_seen TEXT NOT NULL DEFAULT (datetime(\'now\')))'),
     // Statistika qo'shilishidan oldingi obunachilarni ham hisobga olamiz
     env.DB.prepare('INSERT OR IGNORE INTO users (chat_id, type, name, created_at, last_seen) SELECT chat_id, CASE WHEN chat_id < 0 THEN \'group\' ELSE \'private\' END, first_name, created_at, created_at FROM subscribers'),
@@ -310,11 +311,10 @@ function premiumText(env, until) {
     `<i>...va yana ${PREMIUM_COUNT - TOP_PREMIUM.length} ta valyuta</i>`, '',
   );
   if (!until) {
-    const saving = monthPrice(env) * 12 - yearPrice(env);
     lines.push(
       '💰 <b>Tariflar:</b>',
-      `📅 Oylik: <b>${monthPrice(env)} ⭐</b> / oy`,
-      `🗓 Yillik: <b>${yearPrice(env)} ⭐</b> / yil  <i>(${saving} ⭐ tejaysiz 🎁)</i>`,
+      `📅 Oylik: <b>${monthPrice(env)} ⭐</b>${cardEnabled(env) ? ` yoki <b>${som(cardPrice(env, 'month'))}</b>` : ''} / oy`,
+      `🗓 Yillik: <b>${yearPrice(env)} ⭐</b>${cardEnabled(env) ? ` yoki <b>${som(cardPrice(env, 'year'))}</b>` : ''} / yil  <i>(tejamkor 🎁)</i>`,
     );
   } else if (!isAdminUntil) {
     lines.push(`🗓 <i>Yillik tarif bilan uzaytirish mumkin: ${yearPrice(env)} ⭐ (365 kun qo'shiladi)</i>`);
@@ -365,6 +365,7 @@ async function sendPremiumInfo(tg, env, chatId, userId) {
     ]];
     if (until.getUTCFullYear() < 2099) {
       rows.push([{ text: `🗓 Yillikka uzaytirish: ${yearPrice(env)} ⭐`, url: await invoiceLink(tg, env, 'year') }]);
+      if (cardEnabled(env)) rows.push([{ text: '💳 Payme / karta orqali uzaytirish', callback_data: 'card_pay' }]);
     }
     return tg.send(chatId, premiumRatesText(await getRates(), until), { reply_markup: { inline_keyboard: rows } });
   }
@@ -374,6 +375,7 @@ async function sendPremiumInfo(tg, env, chatId, userId) {
       inline_keyboard: [
         listBtn,
         [{ text: `⭐ Oylik: ${monthPrice(env)} ⭐`, url: mLink }, { text: `🗓 Yillik: ${yearPrice(env)} ⭐`, url: yLink }],
+        ...(cardEnabled(env) ? [[{ text: '💳 Payme / karta orqali to\'lash', callback_data: 'card_pay' }]] : []),
       ],
     },
   });
@@ -421,19 +423,21 @@ async function handlePayment(tg, env, msg) {
 // Yillik premium tugashiga 3 kun qolganda eslatma (cron ichida)
 async function sendYearReminders(tg, env, limit) {
   const { results } = await env.DB.prepare(
-    `SELECT chat_id, until FROM premium WHERE plan = 'year' AND reminded = 0
+    `SELECT chat_id, until, plan FROM premium WHERE plan IN ('year', 'card_month', 'card_year') AND reminded = 0
      AND until > datetime('now') AND until <= datetime('now', '+3 days') LIMIT ?`
   ).bind(limit).all();
   let sent = 0;
-  for (const { chat_id, until } of results) {
+  for (const { chat_id, until, plan } of results) {
     try {
       const link = await invoiceLink(tg, env, 'year');
+      const rows = [[{ text: `🗓 Uzaytirish: ${yearPrice(env)} ⭐`, url: link }]];
+      if (cardEnabled(env)) rows.push([{ text: '💳 Payme / karta orqali uzaytirish', callback_data: 'card_pay' }]);
       await tg.send(chat_id, [
         '⏰ <b>Premium tugashiga oz qoldi</b>',
         '',
-        `Yillik Premium <b>${dateUz(fromSql(until))}</b> da tugaydi.`,
-        `Uzaytirsangiz, yana 365 kun qo'shiladi.`,
-      ].join('\n'), { reply_markup: { inline_keyboard: [[{ text: `🗓 Uzaytirish: ${yearPrice(env)} ⭐`, url: link }]] } });
+        `${plan === 'card_month' ? 'Oylik' : 'Yillik'} Premium <b>${dateUz(fromSql(until))}</b> da tugaydi.`,
+        'Uzaytirsangiz, muddat qolgan kunlaringizga qo\'shiladi.',
+      ].join('\n'), { reply_markup: { inline_keyboard: rows } });
       sent++;
     } catch (e) {
       console.error('Eslatma yuborilmadi', chat_id, e.message);
@@ -441,6 +445,163 @@ async function sendYearReminders(tg, env, limit) {
     await env.DB.prepare('UPDATE premium SET reminded = 1 WHERE chat_id = ?').bind(chat_id).run();
   }
   return sent;
+}
+
+// ---------- Karta (Payme/Click) orqali to'lov: chek va admin tasdig'i ----------
+const cardEnabled = (env) => !!(env.CARD_NUMBER && String(env.CARD_NUMBER).trim());
+const cardPrice = (env, plan) => Number(plan === 'year' ? env.CARD_PRICE_YEAR : env.CARD_PRICE_MONTH) || (plan === 'year' ? 109000 : 9900);
+const som = (n) => `${money(n, 0)} so'm`;
+const cardPlanName = (plan) => (plan === 'year' ? 'Yillik (365 kun)' : 'Oylik (30 kun)');
+const CARD_REJECT_REASONS = {
+  1: 'Pul kartaga tushmagan',
+  2: 'Summa noto\'g\'ri',
+  3: 'Chek noaniq yoki o\'qib bo\'lmaydi',
+};
+
+function cardChooseText(env) {
+  return [
+    '💳 <b>Payme / karta orqali to\'lash</b>',
+    '',
+    'Tarifni tanlang 👇',
+    '',
+    `📅 Oylik: <b>${som(cardPrice(env, 'month'))}</b> (30 kun)`,
+    `🗓 Yillik: <b>${som(cardPrice(env, 'year'))}</b> (365 kun)`,
+  ].join('\n');
+}
+
+function cardInstructionText(env, plan) {
+  return [
+    '💳 <b>Karta orqali to\'lov</b>',
+    '',
+    `📅 Tarif: <b>${cardPlanName(plan)}</b>`,
+    `💰 Summa: <b>${som(cardPrice(env, plan))}</b>`,
+    '',
+    `💳 Karta: <code>${esc(String(env.CARD_NUMBER).trim())}</code>`,
+    env.CARD_OWNER ? `👤 Egasi: <b>${esc(String(env.CARD_OWNER).trim())}</b>` : '',
+    '',
+    `1️⃣ Shu kartaga <b>${som(cardPrice(env, plan))}</b> o'tkazing (Payme, Click yoki bank ilovasi orqali)`,
+    '2️⃣ To\'lov <b>chekini (skrinshot)</b> shu yerga yuboring 📸',
+    '',
+    '<i>Chek tekshirilgach, premium yoqiladi va sizga xabar beraman.</i>',
+  ].filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n');
+}
+
+// Foydalanuvchi tarifni tanladi: chek kutilayotgan so'rov yaratiladi
+async function startCardRequest(tg, env, chatId, from, plan) {
+  await ensureStateTable(env);
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM card_requests WHERE chat_id = ? AND status = \'waiting\'').bind(chatId),
+    env.DB.prepare('INSERT INTO card_requests (chat_id, name, plan, amount, status) VALUES (?, ?, ?, ?, \'waiting\')')
+      .bind(chatId, [from?.first_name, from?.last_name].filter(Boolean).join(' ') + (from?.username ? ` (@${from.username})` : ''), plan, cardPrice(env, plan)),
+  ]);
+  return tg.send(chatId, cardInstructionText(env, plan), {
+    reply_markup: { inline_keyboard: [[{ text: '❌ Bekor qilish', callback_data: 'card_cancel' }]] },
+  });
+}
+
+// Chek rasmi keldi. Kutilayotgan so'rov bo'lmasa false qaytaradi (oddiy rasm sifatida ishlanadi)
+async function handleReceipt(tg, env, msg) {
+  await ensureStateTable(env);
+  const req = await env.DB.prepare('SELECT * FROM card_requests WHERE chat_id = ? AND status = \'waiting\' ORDER BY id DESC LIMIT 1').bind(msg.chat.id).first();
+  if (!req) return false;
+  const kind = msg.photo ? 'photo' : 'document';
+  const fileId = msg.photo ? msg.photo[msg.photo.length - 1].file_id : msg.document.file_id;
+  const caption = [
+    '💳 <b>Yangi to\'lov cheki</b>',
+    '',
+    `👤 ${esc(req.name || '')} · ID: <code>${req.chat_id}</code>`,
+    `📅 ${cardPlanName(req.plan)}`,
+    `💰 <b>${som(req.amount)}</b>`,
+    `🕐 ${tashkentTime()}`,
+    '',
+    '⚠️ <i>Avval kartangizga pul tushganini tekshiring!</i>',
+  ].join('\n');
+  const sent = await tg.sendFile(env.ADMIN_ID, kind, fileId, caption, {
+    reply_markup: { inline_keyboard: [[
+      { text: '✅ Tasdiqlash', callback_data: `cr_ok:${req.id}` },
+      { text: '❌ Rad etish', callback_data: `cr_no:${req.id}` },
+    ]] },
+  });
+  await env.DB.prepare('UPDATE card_requests SET status = \'pending\', file_id = ?, file_kind = ?, admin_msg = ? WHERE id = ?')
+    .bind(fileId, kind, sent.message_id, req.id).run();
+  await tg.send(msg.chat.id, [
+    '✅ <b>Chek qabul qilindi!</b>',
+    '',
+    'To\'lov tekshirilgach, premium yoqiladi va sizga xabar beraman. ⏳',
+  ].join('\n'));
+  return true;
+}
+
+// Admin "✅ Tasdiqlash" / "❌ Rad etish" / sabab tugmalari
+async function cardDecision(tg, env, cq) {
+  const [action, idStr, reasonId] = cq.data.split(':');
+  const id = Number(idStr);
+  const chatId = cq.message.chat.id;
+  const messageId = cq.message.message_id;
+  await ensureStateTable(env);
+  const req = await env.DB.prepare('SELECT * FROM card_requests WHERE id = ?').bind(id).first();
+  if (!req || req.status !== 'pending') return tg.answerCallback(cq.id, 'Bu chek allaqachon ko\'rib chiqilgan');
+  const baseCaption = cq.message.caption ? esc(cq.message.caption) : '💳 Chek';
+
+  if (action === 'cr_no') {
+    // Sababni tanlash tugmalari
+    await tg.answerCallback(cq.id);
+    return tg.call('editMessageReplyMarkup', {
+      chat_id: chatId, message_id: messageId,
+      reply_markup: { inline_keyboard: [
+        ...Object.entries(CARD_REJECT_REASONS).map(([k, v]) => [{ text: `❌ ${v}`, callback_data: `cr_r:${id}:${k}` }]),
+        [{ text: '⬅️ Orqaga', callback_data: `cr_back:${id}` }],
+      ] },
+    });
+  }
+  if (action === 'cr_back') {
+    await tg.answerCallback(cq.id);
+    return tg.call('editMessageReplyMarkup', {
+      chat_id: chatId, message_id: messageId,
+      reply_markup: { inline_keyboard: [[
+        { text: '✅ Tasdiqlash', callback_data: `cr_ok:${id}` },
+        { text: '❌ Rad etish', callback_data: `cr_no:${id}` },
+      ]] },
+    });
+  }
+  if (action === 'cr_r') {
+    const reason = CARD_REJECT_REASONS[reasonId] || 'To\'lov tasdiqlanmadi';
+    // Foydalanuvchi qayta chek yuborishi mumkin bo'lsin
+    await env.DB.prepare('UPDATE card_requests SET status = \'waiting\', decided_at = datetime(\'now\') WHERE id = ?').bind(id).run();
+    await tg.send(req.chat_id, [
+      '❌ <b>To\'lov tasdiqlanmadi</b>',
+      '',
+      `Sabab: <b>${reason}</b>`,
+      '',
+      `Iltimos, tekshirib, to'g'ri chekni qayta yuboring. Summa: <b>${som(req.amount)}</b>`,
+    ].join('\n'), { reply_markup: { inline_keyboard: [[{ text: '❌ Bekor qilish', callback_data: 'card_cancel' }]] } }).catch(() => {});
+    await tg.answerCallback(cq.id, 'Rad etildi');
+    return tg.editCaption(chatId, messageId, `${baseCaption}\n\n❌ <b>Rad etildi:</b> ${reason}`);
+  }
+  if (action === 'cr_ok') {
+    const row = await env.DB.prepare('SELECT until FROM premium WHERE chat_id = ?').bind(req.chat_id).first();
+    const current = row ? fromSql(row.until) : null;
+    const now = new Date();
+    const base = current && current > now ? current : now; // qolgan kunlarga qo'shiladi
+    const until = new Date(base.getTime() + (req.plan === 'year' ? 365 : 30) * DAY);
+    const plan = req.plan === 'year' ? 'card_year' : 'card_month';
+    await env.DB.batch([
+      env.DB.prepare('INSERT INTO premium (chat_id, until, charge_id, plan, reminded) VALUES (?, ?, ?, ?, 0) ON CONFLICT(chat_id) DO UPDATE SET until = excluded.until, charge_id = excluded.charge_id, plan = excluded.plan, reminded = 0, updated_at = datetime(\'now\')')
+        .bind(req.chat_id, toSql(until), `card:${id}`, plan),
+      env.DB.prepare('UPDATE card_requests SET status = \'approved\', decided_at = datetime(\'now\') WHERE id = ?').bind(id),
+    ]);
+    await tg.send(req.chat_id, [
+      '🎉 <b>To\'lovingiz tasdiqlandi!</b>',
+      '',
+      `✅ Premium yoqildi: <b>${dateUz(until)}</b> gacha.`,
+      `💱 ${PREMIUM_COUNT} ta qo'shimcha valyuta ochildi. <b>⭐ Premium tarif</b> bo'limini ochib ko'ring.`,
+      '',
+      '<i>Muddat tugashidan 3 kun oldin eslatib qo\'yaman.</i>',
+    ].join('\n'), { reply_markup: MAIN_MENU }).catch(() => {});
+    await tg.answerCallback(cq.id, '✅ Tasdiqlandi');
+    return tg.editCaption(chatId, messageId, `${baseCaption}\n\n✅ <b>Tasdiqlandi:</b> premium ${dateUz(until)} gacha`);
+  }
+  return tg.answerCallback(cq.id);
 }
 
 // ---------- To'lovni qaytarish (faqat admin) ----------
@@ -552,7 +713,10 @@ async function statsText(env) {
     (SELECT COUNT(*) FROM subscribers WHERE chat_id > 0) AS subs,
     (SELECT COUNT(*) FROM subscribers WHERE chat_id < 0) AS group_subs,
     (SELECT COUNT(*) FROM premium WHERE until > datetime('now')) AS premium,
-    (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE refunded = 0) AS stars`).first();
+    (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE refunded = 0) AS stars,
+    (SELECT COUNT(*) FROM card_requests WHERE status = 'approved') AS card_count,
+    (SELECT COALESCE(SUM(amount), 0) FROM card_requests WHERE status = 'approved') AS card_sum,
+    (SELECT COUNT(*) FROM card_requests WHERE status = 'pending') AS card_pending`).first();
   const n = (x) => money(Number(x) || 0, 0);
   return [
     `📊 <b>${boldSans('Bot statistikasi')}</b>`,
@@ -562,7 +726,8 @@ async function statsText(env) {
     `🔥 Oxirgi 7 kunda faol: <b>${n(r.active7)}</b>`,
     `🔔 Kunlik obunachilar: <b>${n(r.subs)}</b>`,
     `👨‍👩‍👧 Guruhlar: <b>${n(r.groups)}</b> (obuna bo'lgan: ${n(r.group_subs)})`,
-    `⭐ Premium: <b>${n(r.premium)}</b> (jami tushum: ${n(r.stars)} ⭐)`,
+    `⭐ Premium: <b>${n(r.premium)}</b> (Stars: ${n(r.stars)} ⭐)`,
+    `💳 Karta: <b>${n(r.card_count)} ta</b>, ${n(r.card_sum)} so'm${Number(r.card_pending) ? ` (⏳ ${n(r.card_pending)} ta chek kutmoqda)` : ''}`,
     '',
     `<i>🕐 ${tashkentTime()} holatiga</i>`,
   ].join('\n');
@@ -650,6 +815,10 @@ async function handleMessage(tg, env, msg) {
   if (isGroup) return handleGroupMessage(tg, env, msg, cmd, args);
 
   if (cmd === '/refund' && isAdmin(env, msg.from?.id)) return refundCommand(tg, env, chatId, args);
+
+  // Karta orqali to'lov cheki (rasm yoki rasm-fayl)
+  const isImageDoc = msg.document && /^image\//.test(msg.document.mime_type || '');
+  if ((msg.photo || isImageDoc) && cardEnabled(env) && await handleReceipt(tg, env, msg)) return;
 
   if (text === BTN.PREMIUM) return sendPremiumInfo(tg, env, chatId, msg.from?.id);
   if (text === BTN.ADD_GROUP || text === OLD_ADD_GROUP) {
@@ -785,6 +954,31 @@ async function handleCallback(tg, env, cq) {
   if (cq.data === 'convert_help') {
     await tg.answerCallback(cq.id);
     return tg.send(chatId, convertHelpText(), { reply_markup: convertKeyboard(await getConvertCurrency(env, chatId)) });
+  }
+  if (cq.data === 'card_pay') {
+    await tg.answerCallback(cq.id);
+    if (!cardEnabled(env)) return tg.send(chatId, '⚠️ Karta orqali to\'lov hozircha mavjud emas.');
+    return tg.send(chatId, cardChooseText(env), {
+      reply_markup: { inline_keyboard: [[
+        { text: `📅 Oylik: ${som(cardPrice(env, 'month'))}`, callback_data: 'card_month' },
+        { text: `🗓 Yillik: ${som(cardPrice(env, 'year'))}`, callback_data: 'card_year' },
+      ]] },
+    });
+  }
+  if (cq.data === 'card_month' || cq.data === 'card_year') {
+    await tg.answerCallback(cq.id);
+    if (!cardEnabled(env)) return tg.send(chatId, '⚠️ Karta orqali to\'lov hozircha mavjud emas.');
+    return startCardRequest(tg, env, chatId, cq.from, cq.data === 'card_year' ? 'year' : 'month');
+  }
+  if (cq.data === 'card_cancel') {
+    await ensureStateTable(env);
+    await env.DB.prepare('DELETE FROM card_requests WHERE chat_id = ? AND status = \'waiting\'').bind(chatId).run();
+    await tg.answerCallback(cq.id, 'Bekor qilindi');
+    return tg.send(chatId, '❌ Karta orqali to\'lov bekor qilindi.');
+  }
+  if (/^cr_(ok|no|r|back):/.test(cq.data || '')) {
+    if (!isAdmin(env, cq.from?.id)) return tg.answerCallback(cq.id);
+    return cardDecision(tg, env, cq);
   }
   if (cq.data?.startsWith('rf_')) {
     if (!isAdmin(env, cq.from?.id)) return tg.answerCallback(cq.id);
